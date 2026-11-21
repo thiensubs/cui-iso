@@ -128,6 +128,7 @@ typedef struct {
     float x2, y2, z2;
     float radius;            /* cylinder/sphere radius, link thickness */
     float pulse;             /* link: 0..1 position of a travelling dot, <0 = none */
+    float bias;              /* tie-break added to the painter's key */
     const char *label;       /* link/text: optional text drawn at the anchor */
     float label_value;       /* link: optional number shown next to the label */
     int label_decimals;      /* link: digits after the point for label_value */
@@ -360,7 +361,7 @@ void cui_iso_lattice(cui_iso_scene *s, float cx, float cy, float z,
     for (int i = 0; i < nodes; i++)
         cui_iso_sphere(s, cx + px[i], cy + py[i], z + pz[i], ball, ball_color);
     for (int i = 1; i < nodes; i++)
-        for (int k = 0; k < sticks && i + k < nodes; k++) {
+        for (int k = 0; k < sticks && i + 1 + k < nodes; k++) {
             int j = i + 1 + k;
             cui_iso_link(s, cx + px[i], cy + py[i], z + pz[i],
                          cx + px[j], cy + py[j], z + pz[j],
@@ -569,7 +570,7 @@ static void cui_iso__draw_cylinder(cui_ctx *ui, const cui_iso_camera *cam,
     if (sides > 64) sides = 64;
     float zb = o->z, zt = o->z + o->height;
 
-    cui_vec2 tb[64], bb[64];
+    cui_vec2 tb[65], bb[65];
     for (int i = 0; i <= sides; i++) {
         float a = (float)i / (float)sides * 2.0f * CUI_PI;
         float px = o->cx + cosf(a) * o->radius;
@@ -605,7 +606,7 @@ static void cui_iso__draw_cylinder(cui_ctx *ui, const cui_iso_camera *cam,
     }
 
     /* top cap */
-    cui_vec2 cap[65];
+    cui_vec2 cap[66];
     cui_vec2 centre = cui_iso_project(cam, o->cx, o->cy, zt);
     cap[0] = centre;
     for (int i = 0; i <= sides; i++) cap[i + 1] = tb[i];
@@ -720,7 +721,7 @@ static void cui_iso__draw_link(cui_ctx *ui, const cui_iso_camera *cam,
  * same glow/body/core layering as a straight link, so the two read as the same
  * material. The pulse dot rides the curve, not the chord. */
 static void cui_iso__draw_arc(cui_ctx *ui, const cui_iso_camera *cam,
-                     const cui_iso_text_style *text, const cui_iso_solid *o) {
+                     const cui_iso_solid *o) {
     cui_vec2 a = cui_iso_project(cam, o->cx, o->cy, o->z);
     cui_vec2 b = cui_iso_project(cam, o->x2, o->y2, o->z2);
     /* control point: midpoint lifted in screen space by the bulge */
@@ -759,8 +760,17 @@ static void cui_iso__draw_arc(cui_ctx *ui, const cui_iso_camera *cam,
     }
 }
 
+/* Painter's key: a link or arc sorts at its midpoint so it sits between the
+ * solids it joins; everything else at its anchor. Computed at draw time, so a
+ * camera moved mid-frame still orders correctly. */
+static float cui_iso__key(const cui_iso_camera *cam, const cui_iso_solid *o) {
+    if (o->kind == CUI_ISO_LINK || o->kind == CUI_ISO_ARC)
+        return cui_iso_depth(cam, (o->cx + o->x2) * 0.5f, (o->cy + o->y2) * 0.5f);
+    return cui_iso_depth(cam, o->cx, o->cy);
+}
+
 void cui_iso_end(cui_iso_scene *s, cui_ctx *ui) {
-    if (!s->begun) return;
+    if (!s || !ui || !s->begun) return;
 
     /* Reduced-motion path: freeze every travelling pulse at rest instead of
      * animating, so a motion-sensitive user gets a still but complete scene. */
@@ -775,15 +785,34 @@ void cui_iso_end(cui_iso_scene *s, cui_ctx *ui) {
         cui_iso_solid *o = &s->solids[i];
         if (o->kind == CUI_ISO_SHADOW) cui_iso__draw_shadow(ui, &s->cam, o);
     }
-    for (int i = 0; i < s->count; i++) {
-        cui_iso_solid *o = &s->solids[i];
+    /* Opaque solids, painter's order: back to front by depth key. Keyed at draw
+     * time so a camera moved mid-frame still orders correctly. Stable (strict
+     * >), so equal depths keep insertion order and a frame is reproducible. */
+    int order[CUI_ISO_MAX_SOLIDS];
+    int n = 0;
+    for (int i = 0; i < s->count; i++)
+        if (s->solids[i].kind != CUI_ISO_SHADOW && s->solids[i].kind != CUI_ISO_GLASS)
+            order[n++] = i;
+    for (int i = 1; i < n; i++) {
+        int ci = order[i];
+        float ck = cui_iso__key(&s->cam, &s->solids[ci]) + s->solids[ci].bias;
+        int j = i - 1;
+        while (j >= 0 &&
+               cui_iso__key(&s->cam, &s->solids[order[j]]) + s->solids[order[j]].bias > ck) {
+            order[j + 1] = order[j];
+            j--;
+        }
+        order[j + 1] = ci;
+    }
+    for (int k = 0; k < n; k++) {
+        cui_iso_solid *o = &s->solids[order[k]];
         switch (o->kind) {
             case CUI_ISO_BOX:      cui_iso__draw_box(ui, &s->cam, &s->light, o); break;
             case CUI_ISO_CYLINDER: cui_iso__draw_cylinder(ui, &s->cam, &s->light, o); break;
             case CUI_ISO_WEDGE:    cui_iso__draw_wedge(ui, &s->cam, &s->light, o); break;
             case CUI_ISO_SPHERE:   cui_iso__draw_sphere(ui, &s->cam, o); break;
             case CUI_ISO_LINK:     cui_iso__draw_link(ui, &s->cam, &s->text, o); break;
-            case CUI_ISO_ARC:      cui_iso__draw_arc(ui, &s->cam, &s->text, o); break;
+            case CUI_ISO_ARC:      cui_iso__draw_arc(ui, &s->cam, o); break;
             case CUI_ISO_TEXT:     cui_iso__draw_text(ui, &s->cam, &s->text, o); break;
             default: break;
         }
@@ -796,27 +825,112 @@ void cui_iso_end(cui_iso_scene *s, cui_ctx *ui) {
     s->begun = false;
 }
 
+void cui_iso_depth_bias_last(cui_iso_scene *sc, float bias) {
+    if (sc && sc->count > 0) sc->solids[sc->count - 1].bias = bias;
+}
+
 /* ---- picking ------------------------------------------------------------- */
 
+static float iso__cross(cui_vec2 o, cui_vec2 a, cui_vec2 b)
+{
+    return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+}
+
+/* Convex hull of n <= 16 points by Andrew monotone chain, CCW. Writes the hull
+ * back into pts and returns its length (0 if fewer than 3 distinct points). */
+static int iso__hull(cui_vec2 *p, int n)
+{
+    for (int i = 1; i < n; i++) {
+        cui_vec2 c = p[i];
+        int j = i - 1;
+        while (j >= 0 && (p[j].x > c.x || (p[j].x == c.x && p[j].y > c.y))) {
+            p[j + 1] = p[j];
+            j--;
+        }
+        p[j + 1] = c;
+    }
+    cui_vec2 h[64];   /* must hold every input point */
+    int k = 0;
+    for (int i = 0; i < n; i++) {
+        while (k >= 2 && iso__cross(h[k - 2], h[k - 1], p[i]) <= 0.0f) k--;
+        h[k++] = p[i];
+    }
+    int low = k + 1;
+    for (int i = n - 2; i >= 0; i--) {
+        while (k >= low && iso__cross(h[k - 2], h[k - 1], p[i]) <= 0.0f) k--;
+        h[k++] = p[i];
+    }
+    if (k > 0) k--;
+    for (int i = 0; i < k; i++) p[i] = h[i];
+    return k;
+}
+
+static bool iso__in_hull(const cui_vec2 *pts, int n, float sx, float sy)
+{
+    bool neg = false, pos = false;
+    for (int i = 0; i < n; i++) {
+        cui_vec2 a = pts[i], b = pts[(i + 1) % n];
+        float cr = (b.x - a.x) * (sy - a.y) - (b.y - a.y) * (sx - a.x);
+        if (cr < -1e-4f) neg = true;
+        else if (cr > 1e-4f) pos = true;
+    }
+    return !(neg && pos);
+}
+
+/* A box paints a prism from its lid down to z_top - height, so a click must land
+ * anywhere on that solid, not only on the lid. Under the orthographic projection
+ * a convex prism stays convex on screen, and its silhouette is exactly the convex
+ * hull of its eight projected corners; test the point against that hull.
+ */
+
+/* A click on the lid: the projected top face of the box, no body. */
 bool cui_iso_hit_box(const cui_iso_camera *cam, float sx, float sy,
-                     float cx, float cy, float z_top, float w, float d) {
-    /* Point-in-convex-polygon against the projected top rectangle. */
+                    float cx, float cy, float z_top, float w, float d)
+{
+    if (!cam) return false;
     float x0 = cx - w * 0.5f, x1 = cx + w * 0.5f;
     float y0 = cy - d * 0.5f, y1 = cy + d * 0.5f;
-    cui_vec2 poly[4] = {
+    cui_vec2 q[4] = {
         cui_iso_project(cam, x0, y0, z_top),
         cui_iso_project(cam, x1, y0, z_top),
         cui_iso_project(cam, x1, y1, z_top),
         cui_iso_project(cam, x0, y1, z_top),
     };
-    bool sign = false;
+    bool neg = false, pos = false;
     for (int i = 0; i < 4; i++) {
-        cui_vec2 a = poly[i], b = poly[(i + 1) % 4];
-        float cross = (b.x - a.x) * (sy - a.y) - (b.y - a.y) * (sx - a.x);
-        if (i == 0) sign = cross > 0.0f;
-        else if ((cross > 0.0f) != sign) return false;
+        cui_vec2 a = q[i], b = q[(i + 1) % 4];
+        float cr = (b.x - a.x) * (sy - a.y) - (b.y - a.y) * (sx - a.x);
+        if (cr < -1e-6f) neg = true;
+        else if (cr > 1e-6f) pos = true;
     }
-    return true;
+    return !(neg && pos);
+}
+
+bool cui_iso_hit_solid(const cui_iso_camera *cam, float sx, float sy,
+                     float cx, float cy, float z_top, float height,
+                     float w, float d)
+{
+    if (!cam || cam->scale == 0.0f) return false;
+    float x0 = cx - w * 0.5f, x1 = cx + w * 0.5f;
+    float y0 = cy - d * 0.5f, y1 = cy + d * 0.5f;
+    float zt = z_top, zb = z_top - height;
+    const float kx[4] = { x0, x1, x1, x0 };
+    const float ky[4] = { y0, y0, y1, y1 };
+    cui_vec2 p[8];
+    for (int i = 0; i < 4; i++) {
+        p[i]     = cui_iso_project(cam, kx[i], ky[i], zt);
+        p[i + 4] = cui_iso_project(cam, kx[i], ky[i], zb);
+    }
+    int n = iso__hull(p, 8);
+    if (n < 3) return false;
+    bool neg = false, pos = false;
+    for (int i = 0; i < n; i++) {
+        cui_vec2 a = p[i], b = p[(i + 1) % n];
+        float cr = (b.x - a.x) * (sy - a.y) - (b.y - a.y) * (sx - a.x);
+        if (cr < -1e-6f) neg = true;
+        else if (cr > 1e-6f) pos = true;
+    }
+    return !(neg && pos);
 }
 
 /* A sphere is a screen-space circle at its projected centre. */
@@ -833,16 +947,21 @@ bool cui_iso_hit_sphere(const cui_iso_camera *cam, float sx, float sy,
 bool cui_iso_hit_cylinder(const cui_iso_camera *cam, float sx, float sy,
                           float cx, float cy, float z_bottom, float radius,
                           float height) {
-    cui_vec2 top = cui_iso_project(cam, cx, cy, z_bottom + height);
-    cui_vec2 bot = cui_iso_project(cam, cx, cy, z_bottom);
-    float rx = radius * cam->scale, ry = rx * CUI_ISO_SIN30;
-    /* inside the top ellipse? */
-    float dx = (sx - top.x) / rx, dy = (sy - top.y) / ry;
-    if (dx * dx + dy * dy <= 1.0f) return true;
-    /* inside the column between top and bottom, within the silhouette width? */
-    if (sx >= top.x - rx && sx <= top.x + rx && sy >= top.y && sy <= bot.y + ry)
-        return true;
-    return false;
+    if (!cam || cam->scale == 0.0f || radius <= 0.0f) return false;
+    /* The cylinder paints as its two rim ellipses plus the barrel between them,
+     * so a click lands anywhere inside the convex hull of the rims. Sample each
+     * rim, hull the union, and test the point (same method as cui_iso_hit_solid;
+     * the top-only ellipse test used to leave most of the barrel dead). */
+    enum { R = 20 };
+    cui_vec2 q[2 * R];
+    for (int i = 0; i < R; i++) {
+        float a = (float)i / (float)R * 2.0f * CUI_PI;
+        float ux = cosf(a) * radius, uy = sinf(a) * radius;
+        q[i]         = cui_iso_project(cam, cx + ux, cy + uy, z_bottom + height);
+        q[i + R]     = cui_iso_project(cam, cx + ux, cy + uy, z_bottom);
+    }
+    int n = iso__hull(q, 2 * R);
+    return n >= 3 && iso__in_hull(q, n, sx, sy);
 }
 
 /* Pick the front-most solid under a screen point. Returns its index in the
@@ -855,7 +974,8 @@ int cui_iso_pick(cui_iso_scene *s, float sx, float sy) {
         cui_iso_solid *o = &s->solids[i];
         switch (o->kind) {
             case CUI_ISO_BOX:
-                if (cui_iso_hit_box(&s->cam, sx, sy, o->cx, o->cy, o->z, o->w, o->d))
+                if (cui_iso_hit_solid(&s->cam, sx, sy, o->cx, o->cy, o->z,
+                                     o->height, o->w, o->d))
                     return i;
                 break;
             case CUI_ISO_CYLINDER:

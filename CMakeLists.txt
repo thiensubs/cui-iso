@@ -31,6 +31,35 @@ target_link_libraries(cui_iso_test PRIVATE cui_iso)
 enable_testing()
 add_test(NAME cui_iso_smoke COMMAND cui_iso_test)
 
+# Boundary test: pushes every bounded loop to its maximum (cylinder sides 64,
+# lattice 24 nodes, more solids than fit, layouts at 0/1) and
+# checks degenerate geometry. Paired with the sanitizers is the real gate.
+add_executable(cui_iso_limits_test test_cui_iso_limits.c)
+target_link_libraries(cui_iso_limits_test PRIVATE cui_iso)
+add_test(NAME cui_iso_limits COMMAND cui_iso_limits_test)
+
+# Sort invariant: the same solids added in opposite order must render identical
+# pixels. If cui_iso_end stops sorting, this fails.
+add_executable(cui_iso_sort_test test_cui_iso_sort.c)
+target_link_libraries(cui_iso_sort_test PRIVATE cui_iso)
+add_test(NAME cui_iso_sort COMMAND cui_iso_sort_test)
+
+# Picking vs silhouette: every painted pixel of a lone solid must be hit by
+# that solid hit-test, and no unpainted pixel may be. Catches a hit shape
+# that drifts from the drawn shape.
+add_executable(cui_iso_pick_test test_cui_iso_pick.c)
+target_link_libraries(cui_iso_pick_test PRIVATE cui_iso)
+add_test(NAME cui_iso_pick COMMAND cui_iso_pick_test)
+
+# Sanitized variants, for the gate CI should run too.
+option(CUI_ISO_SANITIZE "Build the tests with ASan and UBSan" OFF)
+if(CUI_ISO_SANITIZE AND NOT MSVC)
+    foreach(t cui_iso_test cui_iso_limits_test cui_iso_sort_test cui_iso_pick_test)
+        target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_link_options(${t} PRIVATE -fsanitize=address,undefined)
+    endforeach()
+endif()
+
 # A real-world example in CUI's own example shape: a CI/CD pipeline diorama.
 add_executable(pipeline examples/pipeline.c)
 target_link_libraries(pipeline PRIVATE cui_iso)

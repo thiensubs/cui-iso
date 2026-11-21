@@ -274,13 +274,24 @@ CUI_API void cui_iso_shadow(cui_iso_scene *s, float cx, float cy, float z,
  * paint function. */
 CUI_API void cui_iso_end(cui_iso_scene *s, cui_ctx *ui);
 
+/* Nudge the solid added last toward (+) or away from (-) the camera when the
+ * scene is sorted for drawing. The sort is by depth, which a diorama gets right;
+ * a bias is for the tie the geometry cannot decide, such as a conduit that
+ * should read in front of the platform it grazes. */
+CUI_API void cui_iso_depth_bias_last(cui_iso_scene *sc, float bias);
+
 /* ---- picking ------------------------------------------------------------- */
 
 /* Click picking. Each returns true if the screen point (sx, sy) lands on that
- * solid: a box by its projected top face, a sphere by its screen circle, a
+ * solid: a box anywhere on its projected prism, a sphere by its screen circle, a
  * cylinder by its top ellipse plus the column beneath it. */
 CUI_API bool cui_iso_hit_box(const cui_iso_camera *cam, float sx, float sy,
                              float cx, float cy, float z_top, float w, float d);
+/* The whole box volume, lid down to z_top - height: what cui_iso_pick uses, so a
+ * click on the body of a box selects it, not only a click on its lid. */
+CUI_API bool cui_iso_hit_solid(const cui_iso_camera *cam, float sx, float sy,
+                               float cx, float cy, float z_top, float height,
+                               float w, float d);
 CUI_API bool cui_iso_hit_sphere(const cui_iso_camera *cam, float sx, float sy,
                                 float x, float y, float z, float radius);
 CUI_API bool cui_iso_hit_cylinder(const cui_iso_camera *cam, float sx, float sy,
