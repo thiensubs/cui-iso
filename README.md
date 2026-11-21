@@ -115,6 +115,32 @@ Move `pulse` (and the value) each frame and the dot travels the link while
 the number updates. All labels share one `cui_iso_text_style`, set once
 with `cui_iso_set_text_style`, so a whole scene's text stays consistent.
 
+### Slots: no magic numbers
+
+Placing solids by hand means typing coordinates — and working out where the
+edge of a box is, or how high its top is. Slots hand that job to the library.
+You ask for a layout, place solids at the slots it gives you, and stack with
+`cui_iso_on` instead of adding heights by hand:
+
+```c
+cui_iso_slot station[3];
+cui_iso_layout_row(station, 3, 0, 0, 0, 110);   // three places, 110 apart
+
+cui_iso_slab(&scene, station[0].x, station[0].y, 0, 70, 58, 14, top, side);
+cui_iso_sphere(&scene, station[0].x, station[0].y, 14, 8, accent);
+
+/* connect two slots; the link is trimmed to their edges automatically */
+cui_iso_link_between(&scene, cui_iso_on(station[0], 14),
+                     cui_iso_on(station[1], 14), 20.0f, 2.0f, color, pulse);
+```
+
+The library also hands out rings (`cui_iso_layout_ring`) and grids
+(`cui_iso_layout_grid`). A scene written this way has no coordinate numbers
+in it at all — you tune the numbers that are real choices (how big, how far
+apart, how high) and never work out a position. Rewriting one of the bundled
+cases this way took it from nine hand-computed coordinates to three, and the
+three that remain are gap sizes, not positions.
+
 ## A diorama in a few lines
 
 ```c
