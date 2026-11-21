@@ -15,7 +15,6 @@
 
 /* Fixed capacity: one allocation, no realloc. Far more than a control surface
  * needs; a scene that overflows simply drops the extra solids. */
-#define CUI_ISO_MAX_SOLIDS 1024
 
 /* ---- lighting ------------------------------------------------------------ */
 
@@ -169,6 +168,8 @@ void cui_iso_set_text_style(cui_iso_scene *s, cui_iso_text_style style) {
 }
 
 void cui_iso_scene_destroy(cui_iso_scene *s) { free(s); }
+
+int cui_iso_scene_count(const cui_iso_scene *s) { return s ? s->count : 0; }
 
 void cui_iso_scene_reset(cui_iso_scene *s) { s->count = 0; s->begun = false; }
 

@@ -133,9 +133,17 @@ CUI_API int cui_iso_layout_grid(cui_iso_slot *out, int cols, int rows,
  * CUI_ISO_MAX_SOLIDS, so the whole thing is one allocation with no realloc. */
 typedef struct cui_iso_scene cui_iso_scene;
 
+/* Capacity of a scene, in solids. Only the first CUI_ISO_MAX_SOLIDS solids
+ * added between begin and end are drawn; the rest are dropped, not overwritten. */
+#define CUI_ISO_MAX_SOLIDS 1024
+
 CUI_API cui_iso_scene *cui_iso_scene_create(void);
 CUI_API void cui_iso_scene_destroy(cui_iso_scene *s);
 CUI_API void cui_iso_scene_reset(cui_iso_scene *s);
+/* How many solids the current batch holds. Never more than CUI_ISO_MAX_SOLIDS:
+ * once the batch is full further solids are dropped, so a caller can tell an
+ * overflow happened by comparing what it added with what is held. */
+CUI_API int cui_iso_scene_count(const cui_iso_scene *s);
 
 /* Start a frame's solid batch against this camera. */
 CUI_API void cui_iso_begin(cui_iso_scene *s, const cui_iso_camera *cam);

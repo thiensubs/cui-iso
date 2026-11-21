@@ -38,10 +38,18 @@ int main(void) {
     cui_set_viewport(ui, 200, 200, 1.0f);
     sc = cui_iso_scene_create();
 
+    /* A batch larger than the capacity must be clamped, not overflow: the count
+     * stops at the cap and the extra solids are dropped. ASan watches the write. */
     render();
     for (int i = 0; i < 4000; i++)
         cui_iso_box(sc, (float)(i % 40), (float)((i / 40) % 40), 10.0f,
                     5, 5, 5, 1, CUI_RGB(0x5c6169), CUI_RGB(0x2c2f33));
+    if (cui_iso_scene_count(sc) != CUI_ISO_MAX_SOLIDS) {
+        fprintf(stderr, "FAIL capacity: count %d, expected cap %d\n",
+                cui_iso_scene_count(sc), CUI_ISO_MAX_SOLIDS);
+        return 1;
+    }
+    printf("ok   capacity: 4000 boxes clamped to %d\n", CUI_ISO_MAX_SOLIDS);
     emit();
 
     render();
