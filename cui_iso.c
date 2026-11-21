@@ -63,6 +63,47 @@ float cui_iso_depth(const cui_iso_camera *cam, float x, float y) {
     return (x * ca - y * sa) + (x * sa + y * ca);
 }
 
+/* ---- slots --------------------------------------------------------------- */
+
+cui_iso_slot cui_iso_on(cui_iso_slot s, float height) {
+    cui_iso_slot r = { s.x, s.y, s.z + height };
+    return r;
+}
+
+int cui_iso_layout_row(cui_iso_slot *out, int n, float cx, float cy,
+                       float z, float spacing) {
+    for (int i = 0; i < n; i++) {
+        /* centred: slot 0 is left-most, so shift back by half the span */
+        out[i].x = cx + (float)(i - (n - 1) / 2.0f) * spacing;
+        out[i].y = cy;
+        out[i].z = z;
+    }
+    return n;
+}
+
+int cui_iso_layout_ring(cui_iso_slot *out, int n, float cx, float cy,
+                        float z, float radius) {
+    for (int i = 0; i < n; i++) {
+        float a = (float)i / (float)n * 6.2831853f;
+        out[i].x = cx + cosf(a) * radius;
+        out[i].y = cy + sinf(a) * radius;
+        out[i].z = z;
+    }
+    return n;
+}
+
+int cui_iso_layout_grid(cui_iso_slot *out, int cols, int rows,
+                        float cx, float cy, float z, float cell) {
+    for (int r = 0; r < rows; r++)
+        for (int c = 0; c < cols; c++) {
+            int i = r * cols + c;
+            out[i].x = cx + (float)(c - (cols - 1) / 2.0f) * cell;
+            out[i].y = cy + (float)(r - (rows - 1) / 2.0f) * cell;
+            out[i].z = z;
+        }
+    return cols * rows;
+}
+
 /* ---- solid list ---------------------------------------------------------- */
 
 typedef enum {
@@ -242,6 +283,19 @@ void cui_iso_link(cui_iso_scene *s, float x1, float y1, float z1,
     o->radius = thickness;
     o->side = color;
     o->pulse = pulse;
+}
+
+void cui_iso_link_between(cui_iso_scene *s, cui_iso_slot a, cui_iso_slot b,
+                          float gap, float thickness, cui_color color,
+                          float pulse) {
+    /* walk from each slot toward the other by `gap`, so the link meets the edge
+     * of whatever sits on the slot instead of its centre. */
+    float dx = b.x - a.x, dy = b.y - a.y;
+    float len = sqrtf(dx * dx + dy * dy);
+    float ux = len > 0.0f ? dx / len : 0.0f;
+    float uy = len > 0.0f ? dy / len : 0.0f;
+    cui_iso_link(s, a.x + ux * gap, a.y + uy * gap, a.z,
+                 b.x - ux * gap, b.y - uy * gap, b.z, thickness, color, pulse);
 }
 
 /* A link that carries a label and a number — the "LLM --3.2k tok/s--> Optimize"

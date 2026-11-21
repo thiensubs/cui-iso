@@ -91,6 +91,32 @@ CUI_API float cui_iso_depth(const cui_iso_camera *cam, float x, float y);
  * can match the built-ins' shading. */
 CUI_API void cui_iso_basis(const cui_iso_camera *cam, float *cos_az, float *sin_az);
 
+/* ---- slots: places the library works out for you ------------------------- */
+
+/* A slot is a place in the scene. Instead of typing raw coordinates (and doing
+ * trig in your head), you ask a layout helper for the slots and place solids
+ * at them. Stack on top of a slot with cui_iso_on instead of adding heights by
+ * hand. Most scenes then contain no coordinate numbers at all. */
+typedef struct cui_iso_slot {
+    float x, y, z;
+} cui_iso_slot;
+
+/* Raise a slot by `height` — "put this on top of that." */
+CUI_API cui_iso_slot cui_iso_on(cui_iso_slot s, float height);
+
+/* A row of `n` slots left-to-right, centred on (cx, cy) at height z, `spacing`
+ * apart. Slot 0 is the left-most. Returns how many it filled (n). */
+CUI_API int cui_iso_layout_row(cui_iso_slot *out, int n, float cx, float cy,
+                               float z, float spacing);
+
+/* A ring of `n` slots around (cx, cy), first one at the front. */
+CUI_API int cui_iso_layout_ring(cui_iso_slot *out, int n, float cx, float cy,
+                                float z, float radius);
+
+/* A grid of slots: `cols` across by `rows` deep, `cell` world units each. */
+CUI_API int cui_iso_layout_grid(cui_iso_slot *out, int cols, int rows,
+                                float cx, float cy, float z, float cell);
+
 /* ---- solid list ---------------------------------------------------------- */
 
 /* A batch of solids drawn back to front. Fill it between cui_iso_begin and
@@ -178,6 +204,14 @@ CUI_API void cui_iso_link_labeled(cui_iso_scene *s, float x1, float y1, float z1
 CUI_API void cui_iso_arc(cui_iso_scene *s, float x1, float y1, float z1,
                          float x2, float y2, float z2, float bulge, float thickness,
                          cui_color color, float pulse);
+
+/* A link from slot `a` to slot `b`, trimmed in by `gap` world units at each end
+ * so it meets the edge of whatever sits on the slot instead of its centre. This
+ * is the no-magic-numbers way to connect two things: you never work out where
+ * the edge is. */
+CUI_API void cui_iso_link_between(cui_iso_scene *s, cui_iso_slot a, cui_iso_slot b,
+                                  float gap, float thickness, cui_color color,
+                                  float pulse);
 
 /* A ball-and-stick graph at a world point — the recurring neural-net motif —
  * in ONE call instead of many sphere+link calls. Places `nodes` balls
