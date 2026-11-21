@@ -36,6 +36,10 @@ add_executable(pipeline examples/pipeline.c)
 target_link_libraries(pipeline PRIVATE cui_iso)
 cui_app_target(pipeline)
 
+# Ten real-world cases rendered to PNGs, for the contact sheet.
+add_executable(top10 examples/top10.c)
+target_link_libraries(top10 PRIVATE cui_iso)
+
 # A windowed demo: the mcpd-style hub-and-pods scene rebuilt on top of cui_iso.
 add_executable(cui_iso_demo scene_demo.c)
 target_link_libraries(cui_iso_demo PRIVATE cui_iso)
