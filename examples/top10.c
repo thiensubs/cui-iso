@@ -133,18 +133,23 @@ static void case_etl(float t) {
     end_case("/tmp/top10/04_data_etl.png");
 }
 
-/* 5. Distributed trace: one request's path, latency on each hop */
+/* 5. Distributed trace: one request's path, latency on each hop.
+ * A row of hops; each hop lifts a little so the path reads as a route. */
 static void case_trace(float t) {
     begin_case("trace");
     floor_grid();
-    float hx[4] = { -120, -40, 40, 120 };
-    float hz[4] = { 0, 22, 8, 0 };
+    cui_iso_slot hop[4];
+    cui_iso_layout_row(hop, 4, 0, 0, 0, 80);
+    float lift[4] = { 0, 22, 8, 0 };
     for (int i = 0; i < 4; i++) {
-        cui_iso_sphere(sc, hx[i], 0, hz[i] + 16, 9, i == 2 ? A() : B());
-        if (i < 3)
-            cui_iso_link_labeled(sc, hx[i] + 8, 0, hz[i] + 16, hx[i + 1] - 8, 0,
-                                 hz[i + 1] + 16, 2.0f, B(), t + i * 0.3f, "ms",
+        cui_iso_slot at = cui_iso_on(hop[i], lift[i]);
+        cui_iso_sphere(sc, at.x, at.y, at.z + 16, 9, i == 2 ? A() : B());
+        if (i < 3) {
+            cui_iso_slot next = cui_iso_on(hop[i + 1], lift[i + 1]);
+            cui_iso_link_labeled(sc, at.x, at.y, at.z + 16, next.x, next.y,
+                                 next.z + 16, 2.0f, B(), t + i * 0.3f, "ms",
                                  12.0f + i * 9, 0);
+        }
     }
     end_case("/tmp/top10/05_trace.png");
 }
@@ -163,19 +168,20 @@ static void case_datacenter(float t) {
     end_case("/tmp/top10/06_datacenter.png");
 }
 
-/* 7. MLOps flow: data -> train -> eval -> deploy with a gate */
+/* 7. MLOps flow: data -> train -> eval -> deploy with a gate.
+ * A row of four stages; the last connector pulses because it is the deploy gate. */
 static void case_mlops(float t) {
     begin_case("mlops");
     floor_grid();
-    struct { float x; const char *n; cui_color c; } s[4] = {
-        { -120, "data", B() }, { -40, "train", B() }, { 40, "eval", A() },
-        { 120, "deploy", G() } };
+    cui_iso_slot s[4];
+    cui_iso_layout_row(s, 4, 0, 0, 0, 80);
+    cui_color col[4] = { B(), B(), A(), G() };
     for (int i = 0; i < 4; i++) {
-        cui_iso_slab(sc, s[i].x, 0, 0, 44, 44, 10, CUI_RGB(0x3a3f47), CUI_RGB(0x23262b));
-        cui_iso_sphere(sc, s[i].x, 0, 16, 8, s[i].c);
+        cui_iso_slab(sc, s[i].x, s[i].y, 0, 44, 44, 10, CUI_RGB(0x3a3f47), CUI_RGB(0x23262b));
+        cui_iso_sphere(sc, s[i].x, s[i].y, 16, 8, col[i]);
         if (i < 3)
-            cui_iso_link(sc, s[i].x + 16, 0, 6, s[i + 1].x - 16, 0, 6, 2.0f,
-                         s[i].c, (i == 2) ? t : -1.0f);
+            cui_iso_link_between(sc, cui_iso_on(s[i], 6), cui_iso_on(s[i + 1], 6),
+                                 16.0f, 2.0f, col[i], (i == 2) ? t : -1.0f);
     }
     end_case("/tmp/top10/07_mlops.png");
 }
@@ -196,17 +202,22 @@ static void case_iot(float t) {
     end_case("/tmp/top10/08_iot_building.png");
 }
 
-/* 9. Manufacturing line: stations on a conveyor, one down (red) */
+/* 9. Manufacturing line: stations on a conveyor, one down (red).
+ * A tight row of stations; station 3 is down, so its colour and the link into
+ * the next one both turn red. */
 static void case_factory(float t) {
     begin_case("factory");
     floor_grid();
+    cui_iso_slot st[5];
+    cui_iso_layout_row(st, 5, 0, 0, 0, 55);
     for (int i = 0; i < 5; i++) {
-        float x = -110 + i * 55;
         cui_color c = (i == 3) ? R() : (i < 3 ? G() : N());
-        cui_iso_box(sc, x, 0, 0, 34, 30, 18, 4, CUI_RGB(0x3a3f47), CUI_RGB(0x23262b));
-        cui_iso_sphere(sc, x, 0, 24, 6, c);
+        cui_iso_box(sc, st[i].x, st[i].y, 0, 34, 30, 18, 4,
+                    CUI_RGB(0x3a3f47), CUI_RGB(0x23262b));
+        cui_iso_sphere(sc, st[i].x, st[i].y, 24, 6, c);
         if (i < 4)
-            cui_iso_link(sc, x + 16, 0, 8, x + 40, 0, 8, 2.0f, i < 3 ? G() : R(), t);
+            cui_iso_link_between(sc, cui_iso_on(st[i], 8), cui_iso_on(st[i + 1], 8),
+                                 16.0f, 2.0f, i < 3 ? G() : R(), t);
     }
     end_case("/tmp/top10/09_manufacturing.png");
 }
