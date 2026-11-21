@@ -9,7 +9,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../vendor/CUI/cmake/CuiApp.cmake)
 
 # The reusable layer. Build it as a library so an app links cui_iso and gets
 # the whole diorama API; nothing here depends on mcpd-ui.
-add_library(cui_iso cui_iso.c)
+add_library(cui_iso cui_iso.c cui_iso_opts.c)
 target_include_directories(cui_iso PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(cui_iso PUBLIC cui::cui)
 
@@ -51,10 +51,15 @@ add_executable(cui_iso_pick_test test_cui_iso_pick.c)
 target_link_libraries(cui_iso_pick_test PRIVATE cui_iso)
 add_test(NAME cui_iso_pick COMMAND cui_iso_pick_test)
 
+# Named-field forms must draw exactly what the positional forms draw.
+add_executable(cui_iso_opts_test test_cui_iso_opts.c)
+target_link_libraries(cui_iso_opts_test PRIVATE cui_iso)
+add_test(NAME cui_iso_opts COMMAND cui_iso_opts_test)
+
 # Sanitized variants, for the gate CI should run too.
 option(CUI_ISO_SANITIZE "Build the tests with ASan and UBSan" OFF)
 if(CUI_ISO_SANITIZE AND NOT MSVC)
-    foreach(t cui_iso_test cui_iso_limits_test cui_iso_sort_test cui_iso_pick_test)
+    foreach(t cui_iso_test cui_iso_limits_test cui_iso_sort_test cui_iso_pick_test cui_iso_opts_test)
         target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
         target_link_options(${t} PRIVATE -fsanitize=address,undefined)
     endforeach()
