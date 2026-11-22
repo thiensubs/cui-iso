@@ -186,6 +186,15 @@ different job with a different trade-off. `cui-iso` is for when you want a
 scene that looks designed, not simulated, and you want it in the same
 immediate-mode frame as the rest of your UI.
 
+## More
+
+`docs/isometric-dioramas.md` is the long form: the palette, and what it took
+to get light theme right; slots; picking; and every test in the suite.
+`CHANGELOG.md` lists what changed and why.
+
+![Dark](docs/images/dioramas-dark.png)
+![Light](docs/images/dioramas-light.png)
+
 ## Building
 
 `cui-iso` is a CMake target, `cui_iso`, a static library that publicly
