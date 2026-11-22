@@ -56,10 +56,16 @@ add_executable(cui_iso_opts_test test_cui_iso_opts.c)
 target_link_libraries(cui_iso_opts_test PRIVATE cui_iso)
 add_test(NAME cui_iso_opts COMMAND cui_iso_opts_test)
 
+# A mis-wired client must draw nothing, not crash: every entry point is
+# called with a NULL scene, and a full scene must not relabel an old solid.
+add_executable(cui_iso_null_test test_cui_iso_null.c)
+target_link_libraries(cui_iso_null_test PRIVATE cui_iso)
+add_test(NAME cui_iso_null COMMAND cui_iso_null_test)
+
 # Sanitized variants, for the gate CI should run too.
 option(CUI_ISO_SANITIZE "Build the tests with ASan and UBSan" OFF)
 if(CUI_ISO_SANITIZE AND NOT MSVC)
-    foreach(t cui_iso_test cui_iso_limits_test cui_iso_sort_test cui_iso_pick_test cui_iso_opts_test)
+    foreach(t cui_iso_test cui_iso_limits_test cui_iso_sort_test cui_iso_pick_test cui_iso_opts_test cui_iso_null_test)
         target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
         target_link_options(${t} PRIVATE -fsanitize=address,undefined)
     endforeach()

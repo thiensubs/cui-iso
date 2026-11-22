@@ -161,38 +161,52 @@ cui_iso_scene *cui_iso_scene_create(void) {
 }
 
 void cui_iso_set_text_style(cui_iso_scene *s, cui_iso_text_style style) {
+    if (!s) return;
     s->text = style;
     if (s->text.size <= 0.0f) s->text.size = 12.0f;
     if (s->text.color.a == 0) s->text.color = (cui_color){255, 255, 255, 255};
     if (s->text.value_color.a == 0) s->text.value_color = s->text.color;
 }
 
+void cui_iso_set_light(cui_iso_scene *s, cui_iso_light light) {
+    if (s) s->light = light;
+}
+
 void cui_iso_scene_destroy(cui_iso_scene *s) { free(s); }
 
 int cui_iso_scene_count(const cui_iso_scene *s) { return s ? s->count : 0; }
 
-void cui_iso_scene_reset(cui_iso_scene *s) { s->count = 0; s->begun = false; }
+void cui_iso_scene_reset(cui_iso_scene *s) {
+    if (!s) return;
+    s->count = 0;
+    s->begun = false;
+}
 
 void cui_iso_begin(cui_iso_scene *s, const cui_iso_camera *cam) {
+    if (!s || !cam) return;
     s->cam = *cam;
     s->count = 0;
     s->begun = true;
 }
 
-static cui_iso_solid *cui_iso__push(cui_iso_scene *s, cui_iso_kind kind, float depth) {
-    if (!s->begun) return NULL;
+/* Add a solid. The depth key is computed from x/y here, not passed in, so a
+ * NULL scene is caught before any of its fields are read (a caller's
+ * &s->cam in the argument list would be evaluated first). */
+static cui_iso_solid *cui_iso__push(cui_iso_scene *s, cui_iso_kind kind,
+                                   float x, float y) {
+    if (!s || !s->begun) return NULL;
     if (s->count >= CUI_ISO_MAX_SOLIDS) return NULL;
     cui_iso_solid *o = &s->solids[s->count++];
     memset(o, 0, sizeof *o);
     o->kind = kind;
-    o->depth = depth;
+    o->depth = cui_iso_depth(&s->cam, x, y);
     return o;
 }
 
 void cui_iso_box(cui_iso_scene *s, float cx, float cy, float z_top,
                  float w, float d, float height, float chamfer,
                  cui_color top, cui_color side) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_BOX, cui_iso_depth(&s->cam, cx, cy));
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_BOX, cx, cy);
     if (!o) return;
     o->cx = cx; o->cy = cy; o->z = z_top;
     o->w = w; o->d = d; o->height = height;
@@ -215,7 +229,7 @@ void cui_iso_slab(cui_iso_scene *s, float cx, float cy, float z_top,
 
 void cui_iso_glass(cui_iso_scene *s, float cx, float cy, float z_bottom,
                    float w, float d, float height, cui_color tint) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_GLASS, cui_iso_depth(&s->cam, cx, cy));
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_GLASS, cx, cy);
     if (!o) return;
     o->cx = cx; o->cy = cy; o->z = z_bottom;
     o->w = w; o->d = d; o->height = height;
@@ -224,7 +238,7 @@ void cui_iso_glass(cui_iso_scene *s, float cx, float cy, float z_bottom,
 
 void cui_iso_shadow(cui_iso_scene *s, float cx, float cy, float z,
                     float rx, float ry, cui_color color) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_SHADOW, cui_iso_depth(&s->cam, cx, cy) - 1000.0f);
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_SHADOW, cx, cy);
     if (!o) return;
     o->cx = cx; o->cy = cy; o->z = z;
     o->w = rx; o->d = ry;        /* reuse w/d as screen radii */
@@ -239,8 +253,7 @@ void cui_iso_shadow(cui_iso_scene *s, float cx, float cy, float z,
  * transparent so your own background shows through. */
 void cui_iso_grid(cui_iso_scene *s, float cx, float cy, float z,
                   int cells, float cell, cui_color fill, cui_color line) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_SHADOW,
-                            cui_iso_depth(&s->cam, cx, cy) - 2000.0f);
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_SHADOW, cx, cy);
     if (!o) return;
     o->cx = cx; o->cy = cy; o->z = z;
     o->w = (float)cells;         /* reuse w as cell count */
@@ -256,7 +269,7 @@ void cui_iso_cylinder(cui_iso_scene *s, float cx, float cy, float z_bottom,
                       cui_color top, cui_color side) {
     /* depth key at the footprint centre; the side is shaded as a cylinder by
      * splitting it into `sides` vertical strips, each lit by its own normal. */
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_CYLINDER, cui_iso_depth(&s->cam, cx, cy));
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_CYLINDER, cx, cy);
     if (!o) return;
     o->cx = cx; o->cy = cy; o->z = z_bottom;
     o->radius = radius; o->height = height;
@@ -266,7 +279,7 @@ void cui_iso_cylinder(cui_iso_scene *s, float cx, float cy, float z_bottom,
 
 void cui_iso_sphere(cui_iso_scene *s, float x, float y, float z,
                     float radius, cui_color color) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_SPHERE, cui_iso_depth(&s->cam, x, y) + z * 0.001f);
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_SPHERE, x, y);
     if (!o) return;
     o->cx = x; o->cy = y; o->z = z;
     o->radius = radius;
@@ -277,8 +290,7 @@ void cui_iso_link(cui_iso_scene *s, float x1, float y1, float z1,
                   float x2, float y2, float z2, float thickness,
                   cui_color color, float pulse) {
     /* sort by the midpoint so a link sits between the solids it joins */
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_LINK,
-                            cui_iso_depth(&s->cam, (x1 + x2) * 0.5f, (y1 + y2) * 0.5f));
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_LINK, (x1 + x2) * 0.5f, (y1 + y2) * 0.5f);
     if (!o) return;
     o->cx = x1; o->cy = y1; o->z = z1;
     o->x2 = x2; o->y2 = y2; o->z2 = z2;
@@ -308,9 +320,10 @@ void cui_iso_link_labeled(cui_iso_scene *s, float x1, float y1, float z1,
                           float x2, float y2, float z2, float thickness,
                           cui_color color, float pulse,
                           const char *label, float value, int decimals) {
+    int before = s ? s->count : 0;
     cui_iso_link(s, x1, y1, z1, x2, y2, z2, thickness, color, pulse);
-    /* the label rides on the solid we just pushed (the last one) */
-    if (s->count > 0) {
+    /* the label rides on the solid this call pushed, not on whatever was last */
+    if (s && s->count == before + 1) {
         cui_iso_solid *o = &s->solids[s->count - 1];
         if (o->kind == CUI_ISO_LINK) {
             o->label = label;
@@ -327,8 +340,7 @@ void cui_iso_link_labeled(cui_iso_scene *s, float x1, float y1, float z1,
 void cui_iso_arc(cui_iso_scene *s, float x1, float y1, float z1,
                  float x2, float y2, float z2, float bulge, float thickness,
                  cui_color color, float pulse) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_ARC,
-                            cui_iso_depth(&s->cam, (x1 + x2) * 0.5f, (y1 + y2) * 0.5f));
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_ARC, (x1 + x2) * 0.5f, (y1 + y2) * 0.5f);
     if (!o) return;
     o->cx = x1; o->cy = y1; o->z = z1;
     o->x2 = x2; o->y2 = y2; o->z2 = z2;
@@ -386,7 +398,7 @@ void cui_iso_disk_stack(cui_iso_scene *s, float cx, float cy, float z_bottom,
  * scene's text colour. */
 void cui_iso_text(cui_iso_scene *s, float x, float y, float z,
                   const char *text, cui_color color) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_TEXT, cui_iso_depth(&s->cam, x, y));
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_TEXT, x, y);
     if (!o) return;
     o->cx = x; o->cy = y; o->z = z;
     o->label = text;
@@ -399,7 +411,7 @@ void cui_iso_text(cui_iso_scene *s, float x, float y, float z,
  * z_base. The two roof faces are shaded by the light like box sides. */
 void cui_iso_wedge(cui_iso_scene *s, float cx, float cy, float z_base,
                    float w, float d, float height, cui_color roof, cui_color side) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_WEDGE, cui_iso_depth(&s->cam, cx, cy));
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_WEDGE, cx, cy);
     if (!o) return;
     o->cx = cx; o->cy = cy; o->z = z_base;
     o->w = w; o->d = d; o->height = height;
