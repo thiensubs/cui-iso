@@ -106,11 +106,11 @@ static void case_etl(float t) {
     floor_grid();
 
     cui_iso_slot station[3];
-    cui_iso_layout_row(station, 3, 0, 0, 0, 110);
+    cui_iso_layout_row_ex(station, 3, &(cui_iso_layout_row_opts){ .x = 0, .y = 0, .z = 0, .spacing = 110 });
 
     /* two sources stacked in a small column beside the first station */
     cui_iso_slot src[2];
-    cui_iso_layout_row(src, 2, station[0].x, 0, 0, 80);
+    cui_iso_layout_row_ex(src, 2, &(cui_iso_layout_row_opts){ .x = station[0].x, .y = 0, .z = 0, .spacing = 80 });
     for (int i = 0; i < 2; i++) {
         cui_iso_slab(sc, src[i].x, src[i].y, 0, 30, 30, 10,
                      CUI_RGB(0x3a3f47), CUI_RGB(0x23262b));
@@ -140,7 +140,7 @@ static void case_trace(float t) {
     begin_case("trace");
     floor_grid();
     cui_iso_slot hop[4];
-    cui_iso_layout_row(hop, 4, 0, 0, 0, 80);
+    cui_iso_layout_row_ex(hop, 4, &(cui_iso_layout_row_opts){ .x = 0, .y = 0, .z = 0, .spacing = 80 });
     float lift[4] = { 0, 22, 8, 0 };
     for (int i = 0; i < 4; i++) {
         cui_iso_slot at = cui_iso_on(hop[i], lift[i]);
@@ -175,7 +175,7 @@ static void case_mlops(float t) {
     begin_case("mlops");
     floor_grid();
     cui_iso_slot s[4];
-    cui_iso_layout_row(s, 4, 0, 0, 0, 80);
+    cui_iso_layout_row_ex(s, 4, &(cui_iso_layout_row_opts){ .x = 0, .y = 0, .z = 0, .spacing = 80 });
     cui_color col[4] = { B(), B(), A(), G() };
     for (int i = 0; i < 4; i++) {
         cui_iso_slab(sc, s[i].x, s[i].y, 0, 44, 44, 10, CUI_RGB(0x3a3f47), CUI_RGB(0x23262b));
@@ -210,7 +210,7 @@ static void case_factory(float t) {
     begin_case("factory");
     floor_grid();
     cui_iso_slot st[5];
-    cui_iso_layout_row(st, 5, 0, 0, 0, 55);
+    cui_iso_layout_row_ex(st, 5, &(cui_iso_layout_row_opts){ .x = 0, .y = 0, .z = 0, .spacing = 55 });
     for (int i = 0; i < 5; i++) {
         cui_color c = (i == 3) ? R() : (i < 3 ? G() : N());
         cui_iso_box(sc, st[i].x, st[i].y, 0, 34, 30, 18, 4,

@@ -104,7 +104,7 @@ int cui_iso_layout_row(cui_iso_slot *out, int n, float cx, float cy,
 int cui_iso_layout_ring(cui_iso_slot *out, int n, float cx, float cy,
                         float z, float radius) {
     for (int i = 0; i < n; i++) {
-        float a = (float)i / (float)n * 6.2831853f;
+        float a = (float)i / (float)n * 2.0f * CUI_PI;
         out[i].x = cx + cosf(a) * radius;
         out[i].y = cy + sinf(a) * radius;
         out[i].z = z;
@@ -122,6 +122,25 @@ int cui_iso_layout_grid(cui_iso_slot *out, int cols, int rows,
             out[i].z = z;
         }
     return cols * rows;
+}
+
+/* Named-argument forms of the three layouts. Thin forwards, so the geometry
+ * above is the only geometry: a struct that disagreed with a positional call
+ * would be a bug here, not a second implementation. */
+int cui_iso_layout_row_ex(cui_iso_slot *out, int n, const cui_iso_layout_row_opts *o) {
+    if (!o) return 0;
+    return cui_iso_layout_row(out, n, o->x, o->y, o->z, o->spacing);
+}
+
+int cui_iso_layout_ring_ex(cui_iso_slot *out, int n, const cui_iso_layout_ring_opts *o) {
+    if (!o) return 0;
+    return cui_iso_layout_ring(out, n, o->x, o->y, o->z, o->radius);
+}
+
+int cui_iso_layout_grid_ex(cui_iso_slot *out, int cols, int rows,
+                           const cui_iso_layout_grid_opts *o) {
+    if (!o) return 0;
+    return cui_iso_layout_grid(out, cols, rows, o->x, o->y, o->z, o->cell);
 }
 
 /* ---- solid list ---------------------------------------------------------- */

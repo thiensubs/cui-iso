@@ -65,11 +65,11 @@ int main(void) {
     render();
     cui_iso_slot one[1], two[2], many[8];
     int bad = 0;
-    if (cui_iso_layout_row(one, 0, 0, 0, 0, 10) != 0) bad++;
-    if (cui_iso_layout_row(one, 1, 0, 0, 0, 10) != 1) bad++;
-    if (cui_iso_layout_ring(two, 1, 0, 0, 0, 10) != 1) bad++;
-    if (cui_iso_layout_grid(many, 0, 4, 0, 0, 0, 10) != 0) bad++;
-    if (cui_iso_layout_grid(many, 2, 2, 0, 0, 0, 10) != 4) bad++;
+    if (cui_iso_layout_row_ex(one, 0, &(cui_iso_layout_row_opts){ .spacing = 10 }) != 0) bad++;
+    if (cui_iso_layout_row_ex(one, 1, &(cui_iso_layout_row_opts){ .spacing = 10 }) != 1) bad++;
+    if (cui_iso_layout_ring_ex(two, 1, &(cui_iso_layout_ring_opts){ .radius = 10 }) != 1) bad++;
+    if (cui_iso_layout_grid_ex(many, 0, 4, &(cui_iso_layout_grid_opts){ .cell = 10 }) != 0) bad++;
+    if (cui_iso_layout_grid_ex(many, 2, 2, &(cui_iso_layout_grid_opts){ .cell = 10 }) != 4) bad++;
     emit();
 
     render();

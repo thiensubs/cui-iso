@@ -117,6 +117,38 @@ CUI_API int cui_iso_layout_ring(cui_iso_slot *out, int n, float cx, float cy,
 CUI_API int cui_iso_layout_grid(cui_iso_slot *out, int cols, int rows,
                                 float cx, float cy, float z, float cell);
 
+/* The same three layouts, taking their names instead of a positional run.
+ * A layout is described by where it starts and how it steps, so the opts
+ * structs say that: start and spacing, not five interchangeable floats.
+ * The positional forms above stay, and remain correct; these exist because
+ * cui_iso_layout_row(out, 6, 0, 0, 0, 30) cannot be read at the call site and
+ * cui_iso_layout_row_ex(out, 6, &(cui_iso_layout_row_opts){ .spacing = 30 }) can. */
+typedef struct cui_iso_layout_row_opts {
+    int _;
+    float x, y, z;   /* centre of the row */
+    float spacing;   /* centre-to-centre distance between slots */
+} cui_iso_layout_row_opts;
+
+typedef struct cui_iso_layout_ring_opts {
+    int _;
+    float x, y, z;   /* centre of the ring */
+    float radius;    /* distance from the centre to a slot */
+} cui_iso_layout_ring_opts;
+
+typedef struct cui_iso_layout_grid_opts {
+    int _;
+    float x, y, z;   /* centre of the grid */
+    float cell;      /* world units per cell, both axes */
+} cui_iso_layout_grid_opts;
+
+CUI_API int cui_iso_layout_row_ex(cui_iso_slot *out, int n,
+                                  const cui_iso_layout_row_opts *o);
+CUI_API int cui_iso_layout_ring_ex(cui_iso_slot *out, int n,
+                                   const cui_iso_layout_ring_opts *o);
+CUI_API int cui_iso_layout_grid_ex(cui_iso_slot *out, int cols, int rows,
+                                   const cui_iso_layout_grid_opts *o);
+
+
 /* ---- solid list ---------------------------------------------------------- */
 
 /* A batch of solids drawn back to front. Fill it between cui_iso_begin and
