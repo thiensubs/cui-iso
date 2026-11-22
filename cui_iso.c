@@ -13,6 +13,27 @@
 #define CUI_ISO_COS30 0.8660254f
 #define CUI_ISO_SIN30 0.5f
 
+/* Link and arc are drawn as the same three-layer strand: a wide translucent
+ * glow, a body, and a bright core. One set of weights for both, so they read as
+ * one material instead of two that happen to look alike. */
+#define CUI_ISO_STRAND_GLOW_A 0.20f   /* glow alpha  = strand alpha * this */
+#define CUI_ISO_STRAND_BODY_A 0.75f   /* body alpha  = strand alpha * this */
+#define CUI_ISO_STRAND_CORE_A 235     /* core alpha, 0..255 */
+#define CUI_ISO_STRAND_GLOW_W 3.2f    /* layer widths, times strand thickness */
+#define CUI_ISO_STRAND_BODY_W 1.6f
+#define CUI_ISO_STRAND_CORE_W 0.7f
+
+/* A sphere reads as a ball by the highlight in its upper left. */
+#define CUI_ISO_SPHERE_HI_DX 0.30f    /* highlight offset, times radius */
+#define CUI_ISO_SPHERE_HI_DY 0.32f
+#define CUI_ISO_SPHERE_HI_R 0.42f     /* highlight radius, times radius */
+#define CUI_ISO_SPHERE_HI_A 0.55f     /* highlight alpha, times body alpha */
+
+/* Cap and ridge outlines, in pixels. */
+#define CUI_ISO_EDGE_W 1.4f
+#define CUI_ISO_EDGE_A 0.09f   /* edge alpha, times face alpha */
+#define CUI_ISO_FRAME_W 1.6f
+
 /* Fixed capacity: one allocation, no realloc. Far more than a control surface
  * needs; a scene that overflows simply drops the extra solids. */
 
@@ -119,7 +140,6 @@ typedef enum {
 
 typedef struct {
     cui_iso_kind kind;
-    float depth;             /* painter's-algorithm key, ascending */
     float cx, cy, z;         /* anchor: box -> top centre, glass -> bottom, shadow -> plane */
     float w, d, height;
     float chamfer;
@@ -145,6 +165,8 @@ struct cui_iso_scene {
     int count;
     bool begun;
     bool reduced_motion;     /* freeze pulses at rest; CUI reduced-motion path */
+    bool has_bounds;         /* set by cui_iso_set_bounds; else draw anywhere */
+    cui_rect bounds;
 };
 
 CUI_API void cui_iso_set_text_style(cui_iso_scene *s, cui_iso_text_style style);
@@ -172,6 +194,12 @@ void cui_iso_set_light(cui_iso_scene *s, cui_iso_light light) {
     if (s) s->light = light;
 }
 
+void cui_iso_set_bounds(cui_iso_scene *s, cui_rect r) {
+    if (!s) return;
+    s->bounds = r;
+    s->has_bounds = true;
+}
+
 void cui_iso_scene_destroy(cui_iso_scene *s) { free(s); }
 
 int cui_iso_scene_count(const cui_iso_scene *s) { return s ? s->count : 0; }
@@ -189,24 +217,22 @@ void cui_iso_begin(cui_iso_scene *s, const cui_iso_camera *cam) {
     s->begun = true;
 }
 
-/* Add a solid. The depth key is computed from x/y here, not passed in, so a
- * NULL scene is caught before any of its fields are read (a caller's
- * &s->cam in the argument list would be evaluated first). */
-static cui_iso_solid *cui_iso__push(cui_iso_scene *s, cui_iso_kind kind,
-                                   float x, float y) {
+/* Add a solid, or NULL when the scene is NULL, not begun, or full. The scene
+ * is checked before it is touched, so a mis-wired caller draws nothing
+ * instead of reading through a null pointer. */
+static cui_iso_solid *cui_iso__push(cui_iso_scene *s, cui_iso_kind kind) {
     if (!s || !s->begun) return NULL;
     if (s->count >= CUI_ISO_MAX_SOLIDS) return NULL;
     cui_iso_solid *o = &s->solids[s->count++];
     memset(o, 0, sizeof *o);
     o->kind = kind;
-    o->depth = cui_iso_depth(&s->cam, x, y);
     return o;
 }
 
 void cui_iso_box(cui_iso_scene *s, float cx, float cy, float z_top,
                  float w, float d, float height, float chamfer,
                  cui_color top, cui_color side) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_BOX, cx, cy);
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_BOX);
     if (!o) return;
     o->cx = cx; o->cy = cy; o->z = z_top;
     o->w = w; o->d = d; o->height = height;
@@ -229,7 +255,7 @@ void cui_iso_slab(cui_iso_scene *s, float cx, float cy, float z_top,
 
 void cui_iso_glass(cui_iso_scene *s, float cx, float cy, float z_bottom,
                    float w, float d, float height, cui_color tint) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_GLASS, cx, cy);
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_GLASS);
     if (!o) return;
     o->cx = cx; o->cy = cy; o->z = z_bottom;
     o->w = w; o->d = d; o->height = height;
@@ -238,7 +264,7 @@ void cui_iso_glass(cui_iso_scene *s, float cx, float cy, float z_bottom,
 
 void cui_iso_shadow(cui_iso_scene *s, float cx, float cy, float z,
                     float rx, float ry, cui_color color) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_SHADOW, cx, cy);
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_SHADOW);
     if (!o) return;
     o->cx = cx; o->cy = cy; o->z = z;
     o->w = rx; o->d = ry;        /* reuse w/d as screen radii */
@@ -253,7 +279,7 @@ void cui_iso_shadow(cui_iso_scene *s, float cx, float cy, float z,
  * transparent so your own background shows through. */
 void cui_iso_grid(cui_iso_scene *s, float cx, float cy, float z,
                   int cells, float cell, cui_color fill, cui_color line) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_SHADOW, cx, cy);
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_SHADOW);
     if (!o) return;
     o->cx = cx; o->cy = cy; o->z = z;
     o->w = (float)cells;         /* reuse w as cell count */
@@ -269,7 +295,7 @@ void cui_iso_cylinder(cui_iso_scene *s, float cx, float cy, float z_bottom,
                       cui_color top, cui_color side) {
     /* depth key at the footprint centre; the side is shaded as a cylinder by
      * splitting it into `sides` vertical strips, each lit by its own normal. */
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_CYLINDER, cx, cy);
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_CYLINDER);
     if (!o) return;
     o->cx = cx; o->cy = cy; o->z = z_bottom;
     o->radius = radius; o->height = height;
@@ -279,7 +305,7 @@ void cui_iso_cylinder(cui_iso_scene *s, float cx, float cy, float z_bottom,
 
 void cui_iso_sphere(cui_iso_scene *s, float x, float y, float z,
                     float radius, cui_color color) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_SPHERE, x, y);
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_SPHERE);
     if (!o) return;
     o->cx = x; o->cy = y; o->z = z;
     o->radius = radius;
@@ -290,7 +316,7 @@ void cui_iso_link(cui_iso_scene *s, float x1, float y1, float z1,
                   float x2, float y2, float z2, float thickness,
                   cui_color color, float pulse) {
     /* sort by the midpoint so a link sits between the solids it joins */
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_LINK, (x1 + x2) * 0.5f, (y1 + y2) * 0.5f);
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_LINK);
     if (!o) return;
     o->cx = x1; o->cy = y1; o->z = z1;
     o->x2 = x2; o->y2 = y2; o->z2 = z2;
@@ -340,7 +366,7 @@ void cui_iso_link_labeled(cui_iso_scene *s, float x1, float y1, float z1,
 void cui_iso_arc(cui_iso_scene *s, float x1, float y1, float z1,
                  float x2, float y2, float z2, float bulge, float thickness,
                  cui_color color, float pulse) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_ARC, (x1 + x2) * 0.5f, (y1 + y2) * 0.5f);
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_ARC);
     if (!o) return;
     o->cx = x1; o->cy = y1; o->z = z1;
     o->x2 = x2; o->y2 = y2; o->z2 = z2;
@@ -398,7 +424,7 @@ void cui_iso_disk_stack(cui_iso_scene *s, float cx, float cy, float z_bottom,
  * scene's text colour. */
 void cui_iso_text(cui_iso_scene *s, float x, float y, float z,
                   const char *text, cui_color color) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_TEXT, x, y);
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_TEXT);
     if (!o) return;
     o->cx = x; o->cy = y; o->z = z;
     o->label = text;
@@ -411,7 +437,7 @@ void cui_iso_text(cui_iso_scene *s, float x, float y, float z,
  * z_base. The two roof faces are shaded by the light like box sides. */
 void cui_iso_wedge(cui_iso_scene *s, float cx, float cy, float z_base,
                    float w, float d, float height, cui_color roof, cui_color side) {
-    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_WEDGE, cx, cy);
+    cui_iso_solid *o = cui_iso__push(s, CUI_ISO_WEDGE);
     if (!o) return;
     o->cx = cx; o->cy = cy; o->z = z_base;
     o->w = w; o->d = d; o->height = height;
@@ -497,8 +523,8 @@ static void cui_iso__draw_box(cui_ctx *ui, const cui_iso_camera *cam, const cui_
     for (int i = 0; i < 8; i++) ring[i] = t[i];
     ring[8] = t[0];
     cui_color edge = o->top;
-    edge.a = (uint8_t)(edge.a * 0.09f + 0.5f);
-    cui_draw_polyline(ui, ring, 9, 1.4f, edge, false);
+    edge.a = (uint8_t)(edge.a * CUI_ISO_EDGE_A + 0.5f);
+    cui_draw_polyline(ui, ring, 9, CUI_ISO_EDGE_W, edge, false);
 }
 
 /* A translucent glass case with a neon top frame. */
@@ -523,12 +549,12 @@ static void cui_iso__draw_glass(cui_ctx *ui, const cui_iso_camera *cam, const cu
     cui_vec2 top[5] = { p[0], p[1], p[2], p[3], p[0] };
     cui_color frame = tint;
     frame.a = 215;
-    cui_draw_polyline(ui, top, 5, 1.6f, frame, false);
+    cui_draw_polyline(ui, top, 5, CUI_ISO_FRAME_W, frame, false);
     for (int i = 0; i < 4; i++) {
         cui_vec2 e[2] = { p[i], p[i + 4] };
         cui_color ef = tint;
         ef.a = 130;
-        cui_draw_polyline(ui, e, 2, 1.4f, ef, false);
+        cui_draw_polyline(ui, e, 2, CUI_ISO_EDGE_W, ef, false);
     }
 }
 
@@ -632,10 +658,10 @@ static void cui_iso__draw_sphere(cui_ctx *ui, const cui_iso_camera *cam, const c
     cui_vec2 c = cui_iso_project(cam, o->cx, o->cy, o->z);
     float r = o->radius * cam->scale;
     cui_draw_circle(ui, c, r, o->top);
-    cui_vec2 hi = { c.x - r * 0.30f, c.y - r * 0.32f };
+    cui_vec2 hi = { c.x - r * CUI_ISO_SPHERE_HI_DX, c.y - r * CUI_ISO_SPHERE_HI_DY };
     cui_color h = o->top;
-    h.a = (uint8_t)(h.a * 0.55f + 0.5f);
-    cui_draw_circle(ui, hi, r * 0.42f, h);
+    h.a = (uint8_t)(h.a * CUI_ISO_SPHERE_HI_A + 0.5f);
+    cui_draw_circle(ui, hi, r * CUI_ISO_SPHERE_HI_R, h);
 }
 
 /* A caption anchored at a world point, centred on it. Drawn in the opaque pass
@@ -690,17 +716,17 @@ static void cui_iso__draw_wedge(cui_ctx *ui, const cui_iso_camera *cam,
  * core, plus an optional travelling pulse dot. Drawn in the opaque pass so it
  * sits behind glass and in front of nothing it shouldn't. */
 static void cui_iso__draw_link(cui_ctx *ui, const cui_iso_camera *cam,
-                      const cui_iso_text_style *text, const cui_iso_solid *o) {
+                      const cui_iso_solid *o) {
     cui_vec2 a = cui_iso_project(cam, o->cx, o->cy, o->z);
     cui_vec2 b = cui_iso_project(cam, o->x2, o->y2, o->z2);
     float t = o->radius;
     cui_color glow = o->side, body = o->side, core = o->side;
-    glow.a = (uint8_t)(glow.a * 0.20f + 0.5f);
-    body.a = (uint8_t)(body.a * 0.75f + 0.5f);
-    core.a = 235;
-    cui_draw_line(ui, a, b, t * 3.2f, glow);
-    cui_draw_line(ui, a, b, t * 1.6f, body);
-    cui_draw_line(ui, a, b, t * 0.7f, core);
+    glow.a = (uint8_t)(glow.a * CUI_ISO_STRAND_GLOW_A + 0.5f);
+    body.a = (uint8_t)(body.a * CUI_ISO_STRAND_BODY_A + 0.5f);
+    core.a = CUI_ISO_STRAND_CORE_A;
+    cui_draw_line(ui, a, b, t * CUI_ISO_STRAND_GLOW_W, glow);
+    cui_draw_line(ui, a, b, t * CUI_ISO_STRAND_BODY_W, body);
+    cui_draw_line(ui, a, b, t * CUI_ISO_STRAND_CORE_W, core);
 
     if (o->pulse >= 0.0f && o->pulse <= 1.0f) {
         cui_vec2 p = { a.x + (b.x - a.x) * o->pulse, a.y + (b.y - a.y) * o->pulse };
@@ -710,22 +736,30 @@ static void cui_iso__draw_link(cui_ctx *ui, const cui_iso_camera *cam,
         cui_draw_circle(ui, p, t * 1.3f, pd);
     }
 
-    /* label + live value, floating just above the midpoint */
-    if (o->label) {
-        cui_vec2 m = { (a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f - o->radius * 3.0f - 8.0f };
-        char val[32];
-        val[0] = 0;
-        if (o->label_decimals >= 0)
-            snprintf(val, sizeof val, "%.*f", o->label_decimals, o->label_value);
-        cui_draw_text(ui, text->font, text->size, m, o->label_color,
-                      o->label, (int)strlen(o->label));
-        if (val[0]) {
-            cui_text_metrics lm = cui_measure_text(ui, text->font, text->size,
-                                                   o->label, (int)strlen(o->label));
-            cui_vec2 vp = { m.x + lm.width + 5.0f, m.y };
-            cui_draw_text(ui, text->font, text->size, vp, text->value_color,
-                          val, (int)strlen(val));
-        }
+
+}
+
+/* The caption floating above a link: drawn in the overlay pass, after every
+ * solid, so nothing sorted in front of the link can paint over the letters.
+ */
+static void cui_iso__draw_link_label(cui_ctx *ui, const cui_iso_camera *cam,
+                     const cui_iso_text_style *text, const cui_iso_solid *o) {
+    if (!o->label) return;
+    cui_vec2 a = cui_iso_project(cam, o->cx, o->cy, o->z);
+    cui_vec2 b = cui_iso_project(cam, o->x2, o->y2, o->z2);
+    cui_vec2 m = { (a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f - o->radius * 3.0f - 8.0f };
+    char val[32];
+    val[0] = 0;
+    if (o->label_decimals >= 0)
+        snprintf(val, sizeof val, "%.*f", o->label_decimals, o->label_value);
+    cui_draw_text(ui, text->font, text->size, m, o->label_color,
+                  o->label, (int)strlen(o->label));
+    if (val[0]) {
+        cui_text_metrics lm = cui_measure_text(ui, text->font, text->size,
+                                               o->label, (int)strlen(o->label));
+        cui_vec2 vp = { m.x + lm.width + 5.0f, m.y };
+        cui_draw_text(ui, text->font, text->size, vp, text->value_color,
+                      val, (int)strlen(val));
     }
 }
 
@@ -751,12 +785,12 @@ static void cui_iso__draw_arc(cui_ctx *ui, const cui_iso_camera *cam,
         path[i].y = v * v * a.y + 2.0f * v * u * ctrl.y + u * u * b.y;
     }
     cui_color glow = o->side, body = o->side, core = o->side;
-    glow.a = (uint8_t)(glow.a * 0.20f + 0.5f);
-    body.a = (uint8_t)(body.a * 0.75f + 0.5f);
-    core.a = 235;
-    cui_draw_polyline(ui, path, N, t * 3.2f, glow, false);
-    cui_draw_polyline(ui, path, N, t * 1.6f, body, false);
-    cui_draw_polyline(ui, path, N, t * 0.7f, core, false);
+    glow.a = (uint8_t)(glow.a * CUI_ISO_STRAND_GLOW_A + 0.5f);
+    body.a = (uint8_t)(body.a * CUI_ISO_STRAND_BODY_A + 0.5f);
+    core.a = CUI_ISO_STRAND_CORE_A;
+    cui_draw_polyline(ui, path, N, t * CUI_ISO_STRAND_GLOW_W, glow, false);
+    cui_draw_polyline(ui, path, N, t * CUI_ISO_STRAND_BODY_W, body, false);
+    cui_draw_polyline(ui, path, N, t * CUI_ISO_STRAND_CORE_W, core, false);
 
     if (o->pulse >= 0.0f && o->pulse <= 1.0f) {
         /* index along the sampled curve */
@@ -773,9 +807,9 @@ static void cui_iso__draw_arc(cui_ctx *ui, const cui_iso_camera *cam,
     }
 }
 
-/* Painter's key: a link or arc sorts at its midpoint so it sits between the
- * solids it joins; everything else at its anchor. Computed at draw time, so a
- * camera moved mid-frame still orders correctly. */
+/* Painter key for a solid, for ordering the draw pass. Links and arcs sort at
+ * their midpoint so they sit between the two things they join; everything else
+ * sorts at its own anchor. */
 static float cui_iso__key(const cui_iso_camera *cam, const cui_iso_solid *o) {
     if (o->kind == CUI_ISO_LINK || o->kind == CUI_ISO_ARC)
         return cui_iso_depth(cam, (o->cx + o->x2) * 0.5f, (o->cy + o->y2) * 0.5f);
@@ -785,37 +819,42 @@ static float cui_iso__key(const cui_iso_camera *cam, const cui_iso_solid *o) {
 void cui_iso_end(cui_iso_scene *s, cui_ctx *ui) {
     if (!s || !ui || !s->begun) return;
 
-    /* Reduced-motion path: freeze every travelling pulse at rest instead of
-     * animating, so a motion-sensitive user gets a still but complete scene. */
+    /* Reduced motion: freeze every travelling pulse at rest. */
     if (s->reduced_motion)
         for (int i = 0; i < s->count; i++)
             if (s->solids[i].pulse >= 0.0f) s->solids[i].pulse = 0.5f;
 
-    /* shadows, then opaque solids back to front, then glass on top. Opaque
-     * solids (boxes, cylinders, spheres, links) share one depth-sorted pass so
-     * a sphere sits correctly behind and in front of the boxes around it. */
-    for (int i = 0; i < s->count; i++) {
-        cui_iso_solid *o = &s->solids[i];
-        if (o->kind == CUI_ISO_SHADOW) cui_iso__draw_shadow(ui, &s->cam, o);
-    }
-    /* Opaque solids, painter's order: back to front by depth key. Keyed at draw
-     * time so a camera moved mid-frame still orders correctly. Stable (strict
-     * >), so equal depths keep insertion order and a frame is reproducible. */
-    int order[CUI_ISO_MAX_SOLIDS];
-    int n = 0;
+    /* A diorama hosted in a panel must not paint outside it: when bounds are
+     * set, every pass below is clipped to that rectangle until the pop at the
+     * end of this function. */
+    if (s->has_bounds) cui_push_clip(ui, s->bounds);
+
+    /* The ground first: shadows and the grid are a floor, never occluders. */
     for (int i = 0; i < s->count; i++)
-        if (s->solids[i].kind != CUI_ISO_SHADOW && s->solids[i].kind != CUI_ISO_GLASS)
-            order[n++] = i;
+        if (s->solids[i].kind == CUI_ISO_SHADOW)
+            cui_iso__draw_shadow(ui, &s->cam, &s->solids[i]);
+
+    /* Opaque solids back to front. Each key is computed once here rather than
+     * once per comparison: at the cap that is 1024 sin/cos pairs, not half a
+     * million. Strict > keeps the sort stable, so equal depths stay in the order
+     * they were added and a frame is reproducible run to run. */
+    int order[CUI_ISO_MAX_SOLIDS];
+    float key[CUI_ISO_MAX_SOLIDS];
+    int n = 0;
+    for (int i = 0; i < s->count; i++) {
+        cui_iso_kind k = s->solids[i].kind;
+        if (k == CUI_ISO_SHADOW || k == CUI_ISO_GLASS || k == CUI_ISO_TEXT) continue;
+        order[n] = i;
+        key[n] = cui_iso__key(&s->cam, &s->solids[i]) + s->solids[i].bias;
+        n++;
+    }
     for (int i = 1; i < n; i++) {
         int ci = order[i];
-        float ck = cui_iso__key(&s->cam, &s->solids[ci]) + s->solids[ci].bias;
+        float ck = key[i];
         int j = i - 1;
-        while (j >= 0 &&
-               cui_iso__key(&s->cam, &s->solids[order[j]]) + s->solids[order[j]].bias > ck) {
-            order[j + 1] = order[j];
-            j--;
-        }
+        while (j >= 0 && key[j] > ck) { order[j + 1] = order[j]; key[j + 1] = key[j]; j--; }
         order[j + 1] = ci;
+        key[j + 1] = ck;
     }
     for (int k = 0; k < n; k++) {
         cui_iso_solid *o = &s->solids[order[k]];
@@ -824,16 +863,30 @@ void cui_iso_end(cui_iso_scene *s, cui_ctx *ui) {
             case CUI_ISO_CYLINDER: cui_iso__draw_cylinder(ui, &s->cam, &s->light, o); break;
             case CUI_ISO_WEDGE:    cui_iso__draw_wedge(ui, &s->cam, &s->light, o); break;
             case CUI_ISO_SPHERE:   cui_iso__draw_sphere(ui, &s->cam, o); break;
-            case CUI_ISO_LINK:     cui_iso__draw_link(ui, &s->cam, &s->text, o); break;
+            case CUI_ISO_LINK:     cui_iso__draw_link(ui, &s->cam, o); break;
             case CUI_ISO_ARC:      cui_iso__draw_arc(ui, &s->cam, o); break;
-            case CUI_ISO_TEXT:     cui_iso__draw_text(ui, &s->cam, &s->text, o); break;
             default: break;
         }
     }
+
+    /* Glass sits over what it holds, so it comes after every opaque solid. */
+    for (int i = 0; i < s->count; i++)
+        if (s->solids[i].kind == CUI_ISO_GLASS)
+            cui_iso__draw_glass(ui, &s->cam, &s->solids[i]);
+
+    /* Text last, in one overlay pass. Drawn inside the sorted pass a caption is
+     * just another solid, so anything sorted in front of it paints over the
+     * letters and the label becomes unreadable at exactly the depths where it
+     * matters. A caption is an annotation, not geometry: it goes on top. */
     for (int i = 0; i < s->count; i++) {
         cui_iso_solid *o = &s->solids[i];
-        if (o->kind == CUI_ISO_GLASS) cui_iso__draw_glass(ui, &s->cam, o);
+        if (o->kind == CUI_ISO_TEXT)
+            cui_iso__draw_text(ui, &s->cam, &s->text, o);
+        else if (o->kind == CUI_ISO_LINK)
+            cui_iso__draw_link_label(ui, &s->cam, &s->text, o);
     }
+
+    if (s->has_bounds) cui_pop_clip(ui);
 
     s->begun = false;
 }
@@ -977,32 +1030,41 @@ bool cui_iso_hit_cylinder(const cui_iso_camera *cam, float sx, float sy,
     return n >= 3 && iso__in_hull(q, n, sx, sy);
 }
 
-/* Pick the front-most solid under a screen point. Returns its index in the
- * scene (draw order) or -1 when nothing is hit. Cylinders and boxes are tested
- * by footprint; spheres by their screen circle. */
+/* Pick the front-most solid under a screen point, by the same depth key the
+ * sort uses. Returns the solid's index in the batch, or -1 when nothing is hit.
+ *
+ * Works during a batch and after cui_iso_end: end keeps the camera and the count
+ * (it only clears begun), so a click handler can ask "what did I just draw here?"
+ * without threading the camera through. Boxes and cylinders are tested by
+ * volume, spheres by their screen circle.
+ */
 int cui_iso_pick(cui_iso_scene *s, float sx, float sy) {
-    if (!s->begun) return -1;
-    /* walk front to back: the last-drawn (largest depth) solid wins */
-    for (int i = s->count - 1; i >= 0; i--) {
+    if (!s) return -1;
+    int best = -1;
+    float best_key = 0.0f;
+    for (int i = 0; i < s->count; i++) {
         cui_iso_solid *o = &s->solids[i];
+        bool hit = false;
         switch (o->kind) {
             case CUI_ISO_BOX:
-                if (cui_iso_hit_solid(&s->cam, sx, sy, o->cx, o->cy, o->z,
-                                     o->height, o->w, o->d))
-                    return i;
+                hit = cui_iso_hit_solid(&s->cam, sx, sy, o->cx, o->cy, o->z,
+                                       o->height, o->w, o->d);
                 break;
             case CUI_ISO_CYLINDER:
-                if (cui_iso_hit_cylinder(&s->cam, sx, sy, o->cx, o->cy, o->z,
-                                         o->radius, o->height))
-                    return i;
+                hit = cui_iso_hit_cylinder(&s->cam, sx, sy, o->cx, o->cy, o->z,
+                                           o->radius, o->height);
                 break;
             case CUI_ISO_SPHERE:
-                if (cui_iso_hit_sphere(&s->cam, sx, sy, o->cx, o->cy, o->z, o->radius))
-                    return i;
+                hit = cui_iso_hit_sphere(&s->cam, sx, sy, o->cx, o->cy, o->z,
+                                        o->radius);
                 break;
             default:
                 break;
         }
+        if (hit) {
+            float k = cui_iso__key(&s->cam, o) + o->bias;
+            if (best < 0 || k > best_key) { best = i; best_key = k; }
+        }
     }
-    return -1;
+    return best;
 }

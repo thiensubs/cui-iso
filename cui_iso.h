@@ -144,6 +144,12 @@ CUI_API void cui_iso_scene_reset(cui_iso_scene *s);
  * once the batch is full further solids are dropped, so a caller can tell an
  * overflow happened by comparing what it added with what is held. */
 CUI_API int cui_iso_scene_count(const cui_iso_scene *s);
+/* Clip every solid to this rectangle on screen, e.g. the canvas a diorama is
+ * painted into, so a large scale cannot bleed over neighbouring widgets. End
+ * pushes the clip before its first solid and pops it after its last, so the
+ * calls pair. Unset is the default: draw anywhere. */
+CUI_API void cui_iso_set_bounds(cui_iso_scene *s, cui_rect r);
+
 /* Replace the scene's light. The default matches the mcpd look; flip x and y
  * to light a scene from the other side, or lower ceil to flatten the shading. */
 CUI_API void cui_iso_set_light(cui_iso_scene *s, cui_iso_light light);
