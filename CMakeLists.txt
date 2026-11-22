@@ -72,10 +72,17 @@ add_executable(cui_iso_null_test test_cui_iso_null.c)
 target_link_libraries(cui_iso_null_test PRIVATE cui_iso)
 add_test(NAME cui_iso_null COMMAND cui_iso_null_test)
 
+# The palette must keep its tonal separation in light and in dark. A theme
+# that collapses two stacked surfaces into one colour passes a screenshot
+# review and fails here.
+add_executable(cui_iso_palette_test test_cui_iso_palette.c)
+target_link_libraries(cui_iso_palette_test PRIVATE cui_iso)
+add_test(NAME cui_iso_palette COMMAND cui_iso_palette_test)
+
 # Sanitized variants, for the gate CI should run too.
 option(CUI_ISO_SANITIZE "Build the tests with ASan and UBSan" OFF)
 if(CUI_ISO_SANITIZE AND NOT MSVC)
-    foreach(t cui_iso_test cui_iso_limits_test cui_iso_sort_test cui_iso_pick_test cui_iso_opts_test cui_iso_null_test)
+    foreach(t cui_iso_test cui_iso_limits_test cui_iso_sort_test cui_iso_pick_test cui_iso_opts_test cui_iso_null_test cui_iso_palette_test)
         target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
         target_link_options(${t} PRIVATE -fsanitize=address,undefined)
     endforeach()

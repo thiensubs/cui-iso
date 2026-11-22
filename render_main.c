@@ -9,7 +9,7 @@
 
 static void diorama(cui_ctx *ui, const cui_iso_camera *cam, cui_iso_scene *sc) {
     cui_draw_rect(ui, (cui_rect){0, 0, cam->cx * 2, cam->cy * 2}, CUI_CORNERS(0),
-                  CUI_RGB(0x16171a));
+                  cui_color_of(ui, CUI_COLOR_BACKGROUND));
 
     cui_iso_scene_reset(sc);
     cui_iso_begin(sc, cam);

@@ -895,6 +895,61 @@ void cui_iso_depth_bias_last(cui_iso_scene *sc, float bias) {
     if (sc && sc->count > 0) sc->solids[sc->count - 1].bias = bias;
 }
 
+/* A tone t of the way from the ground toward the ink, opaque.
+ *
+ * Why a ramp between background and foreground, rather than CUI_COLOR_SURFACE
+ * and CUI_COLOR_SURFACE_RAISED? Measured on this CUI revision: in the light
+ * theme both resolve to 255,255,255, so a plate and the block standing on it
+ * are the same colour and the diorama disappears. A blend toward that theme's
+ * own ink gives the same relative separation in either theme, stays in the
+ * theme's colour family (no second palette), and lands on the same side of the
+ * background as text does.
+ *
+ * Opaque throughout: cui_iso_shade multiplies RGB, and a token sentinel has
+ * alpha 0, so a token must be resolved here rather than carried into a solid.
+ * The blend is cui_mix, CUI's own perceptual one, not a second implementation.
+ */
+static cui_color iso__tone(cui_color ground, cui_color ink, float t) {
+    return cui_mix(ground, ink, t);
+}
+
+cui_iso_palette cui_iso_palette_default(cui_ctx *ui) {
+    cui_iso_palette p;
+    if (!ui) {
+        /* No context: a mid grey family, wrong for every theme but visible in
+         * all of them. Only reachable when a caller passes a NULL ui by hand. */
+        p.plate = p.block = p.floor = (cui_color){ 0x80, 0x80, 0x80, 255 };
+        p.plate_side = p.block_side = (cui_color){ 0x60, 0x60, 0x60, 255 };
+        p.glass = (cui_color){ 0x80, 0x80, 0x80, 60 };
+        p.ink = (cui_color){ 0x10, 0x10, 0x10, 255 };
+        p.ink_dim = (cui_color){ 0x50, 0x50, 0x50, 255 };
+    } else {
+        cui_color ground = cui_color_of(ui, CUI_COLOR_BACKGROUND);
+        cui_color ink = cui_color_of(ui, CUI_COLOR_FOREGROUND);
+        /* The ramp reads as depth: the further a face is from the top, the more
+         * of the ink it carries. Steps of 6/4/2 per level stay visible on both a
+         * near-white and a near-black ground without reaching either extreme. */
+        p.floor      = iso__tone(ground, ink, 0.020f);
+        p.plate      = iso__tone(ground, ink, 0.075f);
+        p.plate_side = iso__tone(ground, ink, 0.135f);
+        p.block      = iso__tone(ground, ink, 0.110f);
+        p.block_side = iso__tone(ground, ink, 0.190f);
+        p.glass      = iso__tone(ground, ink, 0.060f);
+        p.glass.a    = 40;
+        p.ink        = ink;
+        p.ink_dim    = cui_color_of(ui, CUI_COLOR_TEXT_MUTED);
+    }
+
+    /* Status hues are fixed on purpose: "failed" must read as failure in
+     * either theme, so they are not derived from the ground or the accent. */
+    p.ok     = (cui_color){ 0x34, 0xd1, 0x8c, 255 };
+    p.warn   = (cui_color){ 0xf5, 0xa5, 0x24, 255 };
+    p.bad    = (cui_color){ 0xe5, 0x48, 0x4d, 255 };
+    p.info   = (cui_color){ 0x4f, 0xa3, 0xe0, 255 };
+    p.accent = ui ? cui_color_of(ui, CUI_COLOR_ACCENT) : p.info;
+    return p;
+}
+
 /* ---- picking ------------------------------------------------------------- */
 
 static float iso__cross(cui_vec2 o, cui_vec2 a, cui_vec2 b)

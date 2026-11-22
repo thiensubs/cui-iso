@@ -317,12 +317,38 @@ CUI_API bool cui_iso_hit_cylinder(const cui_iso_camera *cam, float sx, float sy,
 
 /* Pick the front-most solid under a screen point. Returns its index in the
  * scene's draw order, or -1 when nothing is hit. Boxes and cylinders are tested
- * by footprint, spheres by their screen circle. Call it with the same camera
- * you drew with, between cui_iso_begin and cui_iso_end (it needs s->begun). */
+ * by volume, spheres by their screen circle. Safe to call after cui_iso_end:
+ * the scene keeps the camera it was drawn with, so a click handler can ask what
+ * was just drawn there. */
 CUI_API int cui_iso_pick(cui_iso_scene *s, float sx, float sy);
 
 #ifdef __cplusplus
 }
 #endif
+
+/* ---- palette -------------------------------------------------------------
+ *
+ * A theme-aware palette for dioramas. The neutral entries (plate, plate_side,
+ * block, block_side, glass, ink, ink_dim, floor) are CUI colour tokens, so they
+ * resolve per theme and one scene reads correctly in light and in dark. The
+ * semantic entries (ok, warn, bad, info, accent) are fixed hues, because a
+ * status means the same thing in either theme and must not drift.
+ *
+ * Most callers should use this instead of raw CUI_RGB(0x..) literals:
+ *
+ *   cui_iso_palette pal = cui_iso_palette_default(ui);
+ *   cui_iso_box(sc, 0, 0, 30, 70, 70, 60, 10, pal.block, pal.block_side);
+ */
+typedef struct cui_iso_palette {
+    cui_color plate, plate_side;    /* a platform: top face, shaded sides */
+    cui_color block, block_side;    /* a raised block */
+    cui_color glass;                /* a vitrine tint, alpha included */
+    cui_color ink, ink_dim;         /* text, secondary text */
+    cui_color floor;                /* ground surface under a grid */
+    cui_color ok, warn, bad;        /* status: passed, running, failed */
+    cui_color info, accent;         /* data, emphasis */
+} cui_iso_palette;
+
+CUI_API cui_iso_palette cui_iso_palette_default(cui_ctx *ui);
 
 #endif /* CUI_ISO_H */

@@ -24,7 +24,8 @@ static cui_iso_scene *sc;
 
 static void begin_case(const char *bg) {
     cui_begin_frame(ui, 1.0f / 60.0f);
-    cui_draw_rect(ui, (cui_rect){0, 0, W, H}, CUI_CORNERS(0), CUI_RGB(0x14161b));
+    cui_draw_rect(ui, (cui_rect){0, 0, W, H}, CUI_CORNERS(0),
+                  cui_color_of(ui, CUI_COLOR_BACKGROUND));
     cui_iso_scene_reset(sc);
     /* a camera framed for a small card */
     cui_iso_camera cam = { 0.55f, W * 0.5f, H * 0.55f, 0.62f };
