@@ -176,8 +176,8 @@ cui_iso_scene *cui_iso_scene_create(void) {
     if (s) {
         s->light = cui_iso_light_default();
         s->text.size = 12.0f;
-        s->text.color = (cui_color){255, 255, 255, 255};
-        s->text.value_color = (cui_color){255, 255, 255, 255};
+        s->text.color = CUI_COLOR_FOREGROUND;   /* token: reads on either theme */
+        s->text.value_color = CUI_COLOR_TEXT_SECONDARY;
     }
     return s;
 }
@@ -186,7 +186,7 @@ void cui_iso_set_text_style(cui_iso_scene *s, cui_iso_text_style style) {
     if (!s) return;
     s->text = style;
     if (s->text.size <= 0.0f) s->text.size = 12.0f;
-    if (s->text.color.a == 0) s->text.color = (cui_color){255, 255, 255, 255};
+    if (s->text.color.a == 0) s->text.color = CUI_COLOR_FOREGROUND;
     if (s->text.value_color.a == 0) s->text.value_color = s->text.color;
 }
 
