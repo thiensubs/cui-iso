@@ -1,5 +1,6 @@
 build/
 build-*/
 *.png
+!docs/images/*.png
 *.o
 *.a
