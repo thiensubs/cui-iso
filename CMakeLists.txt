@@ -4,8 +4,18 @@ project(cui_iso_demo C)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../vendor/CUI ${CMAKE_CURRENT_BINARY_DIR}/cui)
-include(${CMAKE_CURRENT_SOURCE_DIR}/../vendor/CUI/cmake/CuiApp.cmake)
+# Where CUI lives. The default is a vendored checkout beside this directory,
+# which is how it is arranged here; a standalone consumer points it at its own
+# CUI checkout or install instead of copying that layout.
+set(CUI_ISO_CUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../vendor/CUI" CACHE PATH
+    "Path to the CUI source tree whose CMake target this library links")
+if(NOT EXISTS "${CUI_ISO_CUI_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR
+        "CUI not found at ${CUI_ISO_CUI_DIR}. Set -DCUI_ISO_CUI_DIR=<path to CUI>.")
+endif()
+
+add_subdirectory(${CUI_ISO_CUI_DIR} ${CMAKE_CURRENT_BINARY_DIR}/cui)
+include(${CUI_ISO_CUI_DIR}/cmake/CuiApp.cmake)
 
 # The reusable layer. Build it as a library so an app links cui_iso and gets
 # the whole diorama API; nothing here depends on mcpd-ui.
