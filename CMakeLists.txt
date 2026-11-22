@@ -84,10 +84,16 @@ add_executable(cui_iso_layout_test test_cui_iso_layout.c)
 target_link_libraries(cui_iso_layout_test PRIVATE cui_iso)
 add_test(NAME cui_iso_layout COMMAND cui_iso_layout_test)
 
+# Every solid must be callable with named fields, the way CUI spells its own
+# components. This file stops compiling if a field is renamed or missed.
+add_executable(cui_iso_named_test test_cui_iso_named.c)
+target_link_libraries(cui_iso_named_test PRIVATE cui_iso)
+add_test(NAME cui_iso_named COMMAND cui_iso_named_test)
+
 # Sanitized variants, for the gate CI should run too.
 option(CUI_ISO_SANITIZE "Build the tests with ASan and UBSan" OFF)
 if(CUI_ISO_SANITIZE AND NOT MSVC)
-    foreach(t cui_iso_test cui_iso_limits_test cui_iso_sort_test cui_iso_pick_test cui_iso_opts_test cui_iso_null_test cui_iso_palette_test cui_iso_layout_test)
+    foreach(t cui_iso_test cui_iso_limits_test cui_iso_sort_test cui_iso_pick_test cui_iso_opts_test cui_iso_null_test cui_iso_palette_test cui_iso_layout_test cui_iso_named_test)
         target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
         target_link_options(${t} PRIVATE -fsanitize=address,undefined)
     endforeach()

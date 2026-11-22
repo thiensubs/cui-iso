@@ -140,6 +140,33 @@ CUI_API void cui_iso_text_ex(cui_iso_scene *s, const cui_iso_text_opts *o);
 CUI_API void cui_iso_lattice_ex(cui_iso_scene *s, const cui_iso_lattice_opts *o);
 CUI_API void cui_iso_disk_stack_ex(cui_iso_scene *s, const cui_iso_disk_stack_opts *o);
 
+/* ---- the spelling to use ------------------------------------------------
+ *
+ * Same idiom as cui_alert and cui_progress in CUI: the short name is a macro
+ * over the _ex function and the options struct, so a call site reads as named
+ * fields and a diff cannot swap two interchangeable numbers.
+ *
+ *     cui_iso_box_named(sc, .cx = 0, .w = 70, .d = 70, .height = 60 centre,
+ *                       .top = a, .side = b);
+ *
+ * The positional functions below keep working for existing code; new code
+ * should use these.
+ */
+#define cui_iso_box_named(s, ...)         cui_iso_box_ex((s), CUI__OPTS(cui_iso_box_opts, __VA_ARGS__))
+#define cui_iso_slab_named(s, ...)        cui_iso_slab_ex((s), CUI__OPTS(cui_iso_slab_opts, __VA_ARGS__))
+#define cui_iso_glass_named(s, ...)       cui_iso_glass_ex((s), CUI__OPTS(cui_iso_glass_opts, __VA_ARGS__))
+#define cui_iso_cylinder_named(s, ...)    cui_iso_cylinder_ex((s), CUI__OPTS(cui_iso_cylinder_opts, __VA_ARGS__))
+#define cui_iso_sphere_named(s, ...)      cui_iso_sphere_ex((s), CUI__OPTS(cui_iso_sphere_opts, __VA_ARGS__))
+#define cui_iso_shadow_named(s, ...)      cui_iso_shadow_ex((s), CUI__OPTS(cui_iso_shadow_opts, __VA_ARGS__))
+#define cui_iso_grid_named(s, ...)        cui_iso_grid_ex((s), CUI__OPTS(cui_iso_grid_opts, __VA_ARGS__))
+#define cui_iso_link_named(s, ...)        cui_iso_link_ex((s), CUI__OPTS(cui_iso_link_opts, __VA_ARGS__))
+#define cui_iso_link_labeled_named(s, ...) cui_iso_link_labeled_ex((s), CUI__OPTS(cui_iso_link_labeled_opts, __VA_ARGS__))
+#define cui_iso_arc_named(s, ...)         cui_iso_arc_ex((s), CUI__OPTS(cui_iso_arc_opts, __VA_ARGS__))
+#define cui_iso_wedge_named(s, ...)       cui_iso_wedge_ex((s), CUI__OPTS(cui_iso_wedge_opts, __VA_ARGS__))
+#define cui_iso_text_named(s, ...)        cui_iso_text_ex((s), CUI__OPTS(cui_iso_text_opts, __VA_ARGS__))
+#define cui_iso_lattice_named(s, ...)     cui_iso_lattice_ex((s), CUI__OPTS(cui_iso_lattice_opts, __VA_ARGS__))
+#define cui_iso_disk_stack_named(s, ...)  cui_iso_disk_stack_ex((s), CUI__OPTS(cui_iso_disk_stack_opts, __VA_ARGS__))
+
 #ifdef __cplusplus
 }
 #endif
