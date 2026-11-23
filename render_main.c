@@ -1,6 +1,7 @@
 /* Renders a isometric diorama headless with the software renderer and writes a PNG.
  *   cui_iso_render <out.png> [width] [height] [az_degrees] */
 #include "cui_iso.h"
+#include "cui_iso_internal.h"
 #include "cui_iso_opts.h"
 #include <cui/cui_render.h>
 

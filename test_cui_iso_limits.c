@@ -4,6 +4,7 @@
  * input; it must stay clean and never abort.
  */
 #include "cui_iso.h"
+#include "cui_iso_internal.h"
 #include "cui_iso_opts.h"
 #include <cui/cui_render.h>
 

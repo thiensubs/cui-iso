@@ -7,6 +7,7 @@
  * Exit 0 = identical, 1 = differ or error.
  */
 #include "cui_iso.h"
+#include "cui_iso_internal.h"
 #include "cui_iso_opts.h"
 #include <cui/cui_render.h>
 

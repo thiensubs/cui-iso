@@ -2,6 +2,7 @@
  * where the positional ones do, or a scene written one way and reviewed the
  * other would not agree. */
 #include "cui_iso.h"
+#include "cui_iso_internal.h"
 #include "cui_iso_opts.h"
 
 #include <stdio.h>

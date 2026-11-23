@@ -4,6 +4,7 @@
  * Not a pixel-golden test — those belong in the component-shots harness — just
  * a gate that the whole API runs and produces output. */
 #include "cui_iso.h"
+#include "cui_iso_internal.h"
 #include "cui_iso_opts.h"
 #include <cui/cui_render.h>
 

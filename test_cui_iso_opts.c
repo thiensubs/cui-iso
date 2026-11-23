@@ -3,6 +3,7 @@
  * convenience layer honest; a forwarder that forgot an argument would differ.
  */
 #include "cui_iso_opts.h"
+#include "cui_iso_internal.h"
 #include <cui/cui_render.h>
 
 #include <stdio.h>

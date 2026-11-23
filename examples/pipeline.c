@@ -14,6 +14,7 @@
  * cui_draw_* calls through cui-iso; no WebGL, no assets.
  */
 #include "cui_iso.h"
+#include "cui_iso_internal.h"
 #include "cui_iso_opts.h"
 #include <cui/cui_app.h>
 

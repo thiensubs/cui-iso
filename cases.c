@@ -3,6 +3,7 @@
  * plus a few lines, the library is easy to use; if not, it fails.
  *   cui_iso_cases <out.png> */
 #include "cui_iso.h"
+#include "cui_iso_internal.h"
 #include "cui_iso_opts.h"
 #include <cui/cui_render.h>
 

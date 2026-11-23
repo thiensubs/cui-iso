@@ -4,6 +4,7 @@
 #include <cui/cui.h>
 #include <cui/cui_app.h>
 #include "cui_iso.h"
+#include "cui_iso_internal.h"
 #include "cui_iso_opts.h"
 
 #include <math.h>

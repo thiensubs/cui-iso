@@ -1,5 +1,6 @@
 /* cui_iso.c - implementation of the isometric diorama layer. See cui_iso.h. */
 #include "cui_iso.h"
+#include "cui_iso_internal.h"
 
 #include <math.h>
 #include <stdio.h>

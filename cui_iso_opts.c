@@ -2,6 +2,7 @@
  * constructor, so there is exactly one drawing path and one set of defaults.
  */
 #include "cui_iso_opts.h"
+#include "cui_iso_internal.h"
 
 void cui_iso_box_ex(cui_iso_scene *s, const cui_iso_box_opts *o) {
     if (!o) return;
