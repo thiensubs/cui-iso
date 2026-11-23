@@ -7,6 +7,7 @@
  * then compose them with the PIL script in tools/contact_sheet.py.
  */
 #include "cui_iso.h"
+#include "cui_iso_opts.h"
 #include <cui/cui_render.h>
 
 #include <math.h>
@@ -47,7 +48,9 @@ static void end_case(const char *out) {
 
 /* floor for most cases */
 static void floor_grid(void) {
-    cui_iso_grid(sc, 0, 0, 0, 8, 44, CUI_RGB(0x181c23), CUI_RGB(0x242a34));
+    cui_iso_grid_named(sc,
+                       .cx = 0, .cy = 0, .z = 0, .cells = 8, .cell = 44,
+                       .fill = CUI_RGB(0x181c23), .line = CUI_RGB(0x242a34));
 }
 
 static cui_color G(void) { return CUI_RGB(0x34d18c); }
@@ -60,8 +63,11 @@ static cui_color N(void) { return CUI_RGB(0x8b9096); }
 static void case_topology(float t) {
     begin_case("topology");
     floor_grid();
-    cui_iso_slab(sc, 0, 0, 0, 70, 70, 12, CUI_RGB(0x3a3f47), CUI_RGB(0x23262b));
-    cui_iso_sphere(sc, 0, 0, 22, 11, G());
+    cui_iso_slab_named(sc,
+                       .cx = 0, .cy = 0, .z_top = 0, .w = 70, .d = 70, .height = 12,
+                       .top = CUI_RGB(0x3a3f47), .side = CUI_RGB(0x23262b));
+    cui_iso_sphere_named(sc,
+                         .x = 0, .y = 0, .z = 22, .radius = 11, .color = G());
     cui_iso_ring(sc, 0, 0, 0, 96, 5, t, true, G(), NULL, NULL);
     end_case("/tmp/top10/01_service_topology.png");
 }
@@ -75,7 +81,8 @@ static void case_pipeline(float t) {
     for (int i = 0; i < 5; i++) {
         cui_iso_slab(sc, st[i].x, 0, 0, 40, 40, 10,
                      CUI_RGB(0x3a3f47), CUI_RGB(0x23262b));
-        cui_iso_sphere(sc, st[i].x, 0, 16, 7, st[i].c);
+        cui_iso_sphere_named(sc,
+                             .x = st[i].x, .y = 0, .z = 16, .radius = 7, .color = st[i].c);
         if (i < 4)
             cui_iso_link(sc, st[i].x + 14, 0, 6, st[i + 1].x - 14, 0, 6, 2.0f,
                          st[i].c, (st[i].c.a == A().a) ? t : -1.0f);
@@ -89,7 +96,9 @@ static void case_k8s(float t) {
     floor_grid();
     float nx[3] = { -90, 0, 90 };
     for (int n = 0; n < 3; n++) {
-        cui_iso_slab(sc, nx[n], 0, 0, 66, 52, 10, CUI_RGB(0x3a3f47), CUI_RGB(0x23262b));
+        cui_iso_slab_named(sc,
+                           .cx = nx[n], .cy = 0, .z_top = 0, .w = 66, .d = 52, .height = 10,
+                           .top = CUI_RGB(0x3a3f47), .side = CUI_RGB(0x23262b));
         for (int p = 0; p < 3; p++)
             cui_iso_box(sc, nx[n] - 18 + p * 18, 0, 10, 14, 14, 12, 3,
                         (n == 1 && p == 1) ? A() : B(), CUI_RGB(0x23262b));
@@ -144,7 +153,9 @@ static void case_trace(float t) {
     float lift[4] = { 0, 22, 8, 0 };
     for (int i = 0; i < 4; i++) {
         cui_iso_slot at = cui_iso_on(hop[i], lift[i]);
-        cui_iso_sphere(sc, at.x, at.y, at.z + 16, 9, i == 2 ? A() : B());
+        cui_iso_sphere_named(sc,
+                             .x = at.x, .y = at.y, .z = at.z + 16, .radius = 9,
+                             .color = i == 2 ? A() : B());
         if (i < 3) {
             cui_iso_slot next = cui_iso_on(hop[i + 1], lift[i + 1]);
             cui_iso_link_labeled(sc, at.x, at.y, at.z + 16, next.x, next.y,
@@ -159,12 +170,16 @@ static void case_trace(float t) {
 static void case_datacenter(float t) {
     begin_case("datacenter");
     floor_grid();
-    cui_iso_box(sc, 0, -60, 0, 150, 26, 14, 3, CUI_RGB(0x5c6169), CUI_RGB(0x2c2f33));
+    cui_iso_box_named(sc,
+                      .cx = 0, .cy = -60, .z_top = 0, .w = 150, .d = 26, .height = 14,
+                      .chamfer = 3, .top = CUI_RGB(0x5c6169), .side = CUI_RGB(0x2c2f33));
     for (int i = 0; i < 3; i++) {
         float x = -90 + i * 90;
         cui_iso_disk_stack(sc, x, 20, 0, 20, 4, 8, 4, 20,
                            CUI_RGB(0x9fd14f), CUI_RGB(0x3f5a24));
-        cui_iso_link(sc, x, 12, 18, x * 0.3f, -48, 16, 2.0f, G(), t + i * 0.33f);
+        cui_iso_link_named(sc,
+                           .x1 = x, .y1 = 12, .z1 = 18, .x2 = x * 0.3f, .y2 = -48, .z2 = 16,
+                           .thickness = 2.0f, .color = G(), .pulse = t + i * 0.33f);
     }
     end_case("/tmp/top10/06_datacenter.png");
 }
@@ -178,8 +193,11 @@ static void case_mlops(float t) {
     cui_iso_layout_row_ex(s, 4, &(cui_iso_layout_row_opts){ .x = 0, .y = 0, .z = 0, .spacing = 80 });
     cui_color col[4] = { B(), B(), A(), G() };
     for (int i = 0; i < 4; i++) {
-        cui_iso_slab(sc, s[i].x, s[i].y, 0, 44, 44, 10, CUI_RGB(0x3a3f47), CUI_RGB(0x23262b));
-        cui_iso_sphere(sc, s[i].x, s[i].y, 16, 8, col[i]);
+        cui_iso_slab_named(sc,
+                           .cx = s[i].x, .cy = s[i].y, .z_top = 0, .w = 44, .d = 44,
+                           .height = 10, .top = CUI_RGB(0x3a3f47), .side = CUI_RGB(0x23262b));
+        cui_iso_sphere_named(sc,
+                             .x = s[i].x, .y = s[i].y, .z = 16, .radius = 8, .color = col[i]);
         if (i < 3)
             cui_iso_link_between(sc, cui_iso_on(s[i], 6), cui_iso_on(s[i + 1], 6),
                                  16.0f, 2.0f, col[i], (i == 2) ? t : -1.0f);
@@ -194,12 +212,20 @@ static void case_iot(float t) {
     for (int gx = -1; gx <= 1; gx++)
         for (int gy = -1; gy <= 1; gy++) {
             float x = gx * 70.0f, y = gy * 50.0f;
-            cui_iso_cylinder(sc, x, y, 0, 8, 14, 14, CUI_RGB(0x5c6169), CUI_RGB(0x2c2f33));
+            cui_iso_cylinder_named(sc,
+                                   .cx = x, .cy = y, .z_bottom = 0, .radius = 8,
+                                   .height = 14, .sides = 14, .top = CUI_RGB(0x5c6169),
+                                   .side = CUI_RGB(0x2c2f33));
             cui_color c = ((gx + gy) % 2 == 0) ? G() : B();
-            cui_iso_sphere(sc, x, y, 18, 6, c);
-            cui_iso_link(sc, x, y, 20, 0, 0, 26, 1.6f, c, t + (float)(gx + gy) * 0.2f);
+            cui_iso_sphere_named(sc,
+                                 .x = x, .y = y, .z = 18, .radius = 6, .color = c);
+            cui_iso_link_named(sc,
+                               .x1 = x, .y1 = y, .z1 = 20, .x2 = 0, .y2 = 0, .z2 = 26,
+                               .thickness = 1.6f, .color = c,
+                               .pulse = t + (float)(gx + gy) * 0.2f);
         }
-    cui_iso_sphere(sc, 0, 0, 34, 10, A());
+    cui_iso_sphere_named(sc,
+                         .x = 0, .y = 0, .z = 34, .radius = 10, .color = A());
     end_case("/tmp/top10/08_iot_building.png");
 }
 
@@ -215,7 +241,8 @@ static void case_factory(float t) {
         cui_color c = (i == 3) ? R() : (i < 3 ? G() : N());
         cui_iso_box(sc, st[i].x, st[i].y, 0, 34, 30, 18, 4,
                     CUI_RGB(0x3a3f47), CUI_RGB(0x23262b));
-        cui_iso_sphere(sc, st[i].x, st[i].y, 24, 6, c);
+        cui_iso_sphere_named(sc,
+                             .x = st[i].x, .y = st[i].y, .z = 24, .radius = 6, .color = c);
         if (i < 4)
             cui_iso_link_between(sc, cui_iso_on(st[i], 8), cui_iso_on(st[i + 1], 8),
                                  16.0f, 2.0f, i < 3 ? G() : R(), t);
@@ -227,10 +254,19 @@ static void case_factory(float t) {
 static void case_capacity(float t) {
     begin_case("capacity");
     floor_grid();
-    cui_iso_box(sc, -90, -30, 0, 60, 50, 70, 6, CUI_RGB(0x5c6169), CUI_RGB(0x2c2f33));
-    cui_iso_cylinder(sc, 20, 20, 0, 26, 46, 22, A(), CUI_RGB(0x5a4518));
-    cui_iso_box(sc, 90, -40, 0, 44, 44, 34, 5, CUI_RGB(0x4a4e55), CUI_RGB(0x2c2f33));
-    cui_iso_lattice(sc, 90, 40, 0, 8, 2, 22.0f, 4.0f, B(), B(), 3u);
+    cui_iso_box_named(sc,
+                      .cx = -90, .cy = -30, .z_top = 0, .w = 60, .d = 50, .height = 70,
+                      .chamfer = 6, .top = CUI_RGB(0x5c6169), .side = CUI_RGB(0x2c2f33));
+    cui_iso_cylinder_named(sc,
+                           .cx = 20, .cy = 20, .z_bottom = 0, .radius = 26, .height = 46,
+                           .sides = 22, .top = A(), .side = CUI_RGB(0x5a4518));
+    cui_iso_box_named(sc,
+                      .cx = 90, .cy = -40, .z_top = 0, .w = 44, .d = 44, .height = 34,
+                      .chamfer = 5, .top = CUI_RGB(0x4a4e55), .side = CUI_RGB(0x2c2f33));
+    cui_iso_lattice_named(sc,
+                          .cx = 90, .cy = 40, .z = 0, .nodes = 8, .sticks = 2,
+                          .spread = 22.0f, .ball = 4.0f, .ball_color = B(),
+                          .stick_color = B(), .seed = 3u);
     (void)t;
     end_case("/tmp/top10/10_capacity.png");
 }

@@ -7,6 +7,7 @@
  * Exit 0 = identical, 1 = differ or error.
  */
 #include "cui_iso.h"
+#include "cui_iso_opts.h"
 #include <cui/cui_render.h>
 
 #include <stdio.h>
@@ -38,7 +39,9 @@ static unsigned char *shot(int reversed) {
             cui_iso_box(sc, 0, 0, 0, 10, 90, 70, 6,
                         CUI_RGB(0xcc7733), CUI_RGB(0x883318));
         else
-            cui_iso_sphere(sc, 55, 0, 62, 12, CUI_RGB(0x33cc77));
+            cui_iso_sphere_named(sc,
+                                 .x = 55, .y = 0, .z = 62, .radius = 12,
+                                 .color = CUI_RGB(0x33cc77));
     }
 
     cui_iso_end(sc, ui);

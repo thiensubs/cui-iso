@@ -10,6 +10,7 @@
  *   levels on some channel, and the ink is well separated from the ground.
  */
 #include "cui_iso.h"
+#include "cui_iso_opts.h"
 #include <cui/cui_render.h>
 
 #include <stdio.h>

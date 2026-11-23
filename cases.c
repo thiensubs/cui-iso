@@ -3,6 +3,7 @@
  * plus a few lines, the library is easy to use; if not, it fails.
  *   cui_iso_cases <out.png> */
 #include "cui_iso.h"
+#include "cui_iso_opts.h"
 #include <cui/cui_render.h>
 
 #include <stdio.h>
@@ -19,28 +20,42 @@ typedef struct { const char *name; void (*draw)(cui_iso_scene *s); } case_t;
 static cui_iso_palette gpal;
 
 static void c_box(cui_iso_scene *s) {
-    cui_iso_box(s, 0, 0, 30, 70, 70, 60, 10, gpal.block, gpal.block_side);
+    cui_iso_box_named(s,
+                      .cx = 0, .cy = 0, .z_top = 30, .w = 70, .d = 70, .height = 60,
+                      .chamfer = 10, .top = gpal.block, .side = gpal.block_side);
 }
 
 static void c_slab(cui_iso_scene *s) {
-    cui_iso_slab(s, 0, 0, 0, 130, 130, 14, gpal.plate, gpal.plate_side);
+    cui_iso_slab_named(s,
+                       .cx = 0, .cy = 0, .z_top = 0, .w = 130, .d = 130, .height = 14,
+                       .top = gpal.plate, .side = gpal.plate_side);
 }
 
 static void c_cylinder(cui_iso_scene *s) {
-    cui_iso_cylinder(s, 0, 0, 0, 38, 78, 28, CUI_RGB(0x9fd14f), CUI_RGB(0x3f5a24));
+    cui_iso_cylinder_named(s,
+                           .cx = 0, .cy = 0, .z_bottom = 0, .radius = 38, .height = 78,
+                           .sides = 28, .top = CUI_RGB(0x9fd14f), .side = CUI_RGB(0x3f5a24));
 }
 
 static void c_sphere(cui_iso_scene *s) {
-    cui_iso_sphere(s, 0, 0, 34, 26, CUI_RGB(0x4fa3e0));
+    cui_iso_sphere_named(s,
+                         .x = 0, .y = 0, .z = 34, .radius = 26, .color = CUI_RGB(0x4fa3e0));
 }
 
 static void c_disk_stack(cui_iso_scene *s) {
-    cui_iso_disk_stack(s, 0, 0, 0, 40, 4, 10, 5, 28, CUI_RGB(0x9fd14f), CUI_RGB(0x3f5a24));
+    cui_iso_disk_stack_named(s,
+                             .cx = 0, .cy = 0, .z_bottom = 0, .radius = 40, .count = 4,
+                             .disk_h = 10, .gap = 5, .sides = 28, .top = CUI_RGB(0x9fd14f),
+                             .side = CUI_RGB(0x3f5a24));
 }
 
 static void c_glass(cui_iso_scene *s) {
-    cui_iso_box(s, 0, 0, 16, 60, 60, 18, 6, gpal.plate, gpal.block_side);
-    cui_iso_glass(s, 0, 0, 16, 78, 78, 56, (cui_color){0x34, 0xd1, 0x8c, 36});
+    cui_iso_box_named(s,
+                      .cx = 0, .cy = 0, .z_top = 16, .w = 60, .d = 60, .height = 18,
+                      .chamfer = 6, .top = gpal.plate, .side = gpal.block_side);
+    cui_iso_glass_named(s,
+                        .cx = 0, .cy = 0, .z_bottom = 16, .w = 78, .d = 78, .height = 56,
+                        .tint = (cui_color){0x34, 0xd1, 0x8c, 36});
 }
 
 static void c_lattice(cui_iso_scene *s) {
@@ -49,50 +64,76 @@ static void c_lattice(cui_iso_scene *s) {
 }
 
 static void c_link(cui_iso_scene *s) {
-    cui_iso_sphere(s, -48, 0, 30, 12, CUI_RGB(0x4fa3e0));
-    cui_iso_sphere(s, 48, 0, 30, 12, CUI_RGB(0x4fa3e0));
-    cui_iso_link(s, -48, 0, 30, 48, 0, 30, 3.0f, CUI_RGB(0x34d18c), 0.5f);
+    cui_iso_sphere_named(s,
+                         .x = -48, .y = 0, .z = 30, .radius = 12, .color = CUI_RGB(0x4fa3e0));
+    cui_iso_sphere_named(s,
+                         .x = 48, .y = 0, .z = 30, .radius = 12, .color = CUI_RGB(0x4fa3e0));
+    cui_iso_link_named(s,
+                       .x1 = -48, .y1 = 0, .z1 = 30, .x2 = 48, .y2 = 0, .z2 = 30,
+                       .thickness = 3.0f, .color = CUI_RGB(0x34d18c), .pulse = 0.5f);
 }
 
 static void c_arc(cui_iso_scene *s) {
-    cui_iso_sphere(s, -50, 0, 20, 12, CUI_RGB(0x4fa3e0));
-    cui_iso_sphere(s, 50, 0, 20, 12, CUI_RGB(0x4fa3e0));
-    cui_iso_arc(s, -50, 0, 20, 50, 0, 20, 44, 3.0f, CUI_RGB(0x34d18c), 0.5f);
+    cui_iso_sphere_named(s,
+                         .x = -50, .y = 0, .z = 20, .radius = 12, .color = CUI_RGB(0x4fa3e0));
+    cui_iso_sphere_named(s,
+                         .x = 50, .y = 0, .z = 20, .radius = 12, .color = CUI_RGB(0x4fa3e0));
+    cui_iso_arc_named(s,
+                      .x1 = -50, .y1 = 0, .z1 = 20, .x2 = 50, .y2 = 0, .z2 = 20, .bulge = 44,
+                      .thickness = 3.0f, .color = CUI_RGB(0x34d18c), .pulse = 0.5f);
 }
 
 static void c_link_labeled(cui_iso_scene *s) {
-    cui_iso_sphere(s, -50, 0, 30, 12, CUI_RGB(0x9fd14f));
-    cui_iso_sphere(s, 50, 0, 30, 12, CUI_RGB(0x4fa3e0));
+    cui_iso_sphere_named(s,
+                         .x = -50, .y = 0, .z = 30, .radius = 12, .color = CUI_RGB(0x9fd14f));
+    cui_iso_sphere_named(s,
+                         .x = 50, .y = 0, .z = 30, .radius = 12, .color = CUI_RGB(0x4fa3e0));
     cui_iso_link_labeled(s, -50, 0, 30, 50, 0, 30, 2.6f,
                          CUI_RGB(0x34d18c), 0.5f, "tok/s", 3.2f, 1);
 }
 
 static void c_shadow(cui_iso_scene *s) {
-    cui_iso_shadow(s, 0, 0, 0, 58, 38, (cui_color){0, 0, 0, 110});
-    cui_iso_box(s, 0, 0, 44, 60, 60, 44, 8, gpal.block, gpal.block_side);
+    cui_iso_shadow_named(s,
+                         .cx = 0, .cy = 0, .z = 0, .rx = 58, .ry = 38,
+                         .color = (cui_color){0, 0, 0, 110});
+    cui_iso_box_named(s,
+                      .cx = 0, .cy = 0, .z_top = 44, .w = 60, .d = 60, .height = 44,
+                      .chamfer = 8, .top = gpal.block, .side = gpal.block_side);
 }
 
 static void c_text(cui_iso_scene *s) {
-    cui_iso_box(s, 0, 0, 24, 64, 64, 24, 7, gpal.block, gpal.block_side);
-    cui_iso_text(s, 0, 0, 40, "AI Factory", (cui_color){232, 234, 238, 255});
+    cui_iso_box_named(s,
+                      .cx = 0, .cy = 0, .z_top = 24, .w = 64, .d = 64, .height = 24,
+                      .chamfer = 7, .top = gpal.block, .side = gpal.block_side);
+    cui_iso_text_named(s,
+                       .x = 0, .y = 0, .z = 40, .text = "AI Factory",
+                       .color = (cui_color){232, 234, 238, 255});
 }
 
 static void c_wedge(cui_iso_scene *s) {
-    cui_iso_box(s, 0, 0, 30, 80, 70, 30, 4, gpal.plate, gpal.block_side);
-    cui_iso_wedge(s, 0, 0, 30, 80, 70, 34, CUI_RGB(0x9fd14f), CUI_RGB(0x3f5a24));
+    cui_iso_box_named(s,
+                      .cx = 0, .cy = 0, .z_top = 30, .w = 80, .d = 70, .height = 30,
+                      .chamfer = 4, .top = gpal.plate, .side = gpal.block_side);
+    cui_iso_wedge_named(s,
+                        .cx = 0, .cy = 0, .z_base = 30, .w = 80, .d = 70, .height = 34,
+                        .roof = CUI_RGB(0x9fd14f), .side = CUI_RGB(0x3f5a24));
 }
 
 /* ring: a hub-and-spoke, the place callback draws one pod per slot */
 static void ring_place(cui_iso_scene *s, int i, float x, float y,
                        float angle_frac, void *user) {
     (void)user;
-    cui_iso_box(s, x, y, 12, 36, 36, 12, 4, gpal.plate, gpal.block_side);
+    cui_iso_box_named(s,
+                      .cx = x, .cy = y, .z_top = 12, .w = 36, .d = 36, .height = 12,
+                      .chamfer = 4, .top = gpal.plate, .side = gpal.block_side);
     cui_iso_sphere(s, x, y, 20, 7,
                    (i % 2) ? CUI_RGB(0x4fa3e0) : CUI_RGB(0x9fd14f));
 }
 
 static void c_ring(cui_iso_scene *s) {
-    cui_iso_slab(s, 0, 0, 0, 90, 90, 8, gpal.plate, gpal.plate_side);
+    cui_iso_slab_named(s,
+                       .cx = 0, .cy = 0, .z_top = 0, .w = 90, .d = 90, .height = 8,
+                       .top = gpal.plate, .side = gpal.plate_side);
     cui_iso_ring(s, 0, 0, 8, 52, 5, 0.25f, true,
                  (cui_color){0x34, 0xd1, 0x8c, 255}, ring_place, NULL);
 }

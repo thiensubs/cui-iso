@@ -10,6 +10,7 @@
  * Exit 0 when every case is inside tolerance, 1 otherwise.
  */
 #include "cui_iso.h"
+#include "cui_iso_opts.h"
 #include <cui/cui_render.h>
 
 #include <math.h>
