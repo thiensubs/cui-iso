@@ -63,13 +63,15 @@ Placing by hand means typing coordinates and working out where an edge is. Ask
 for a layout instead:
 
     cui_iso_slot station[3];
-    cui_iso_layout_row(station, 3, 0, 0, 0, 110);
+    cui_iso_layout_row_ex(station, 3, &(cui_iso_layout_row_opts){ .spacing = 110 });
 
-    cui_iso_slab(sc, station[0].x, station[0].y, 0, 70, 58, 14, pal.plate, pal.plate_side);
+    cui_iso_slab_named(sc, .cx = station[0].x, .cy = station[0].y, .z_top = 0,
+                       .w = 70, .d = 58, .height = 14,
+                       .top = pal.plate, .side = pal.plate_side);
     cui_iso_link_between(sc, cui_iso_on(station[0], 14), cui_iso_on(station[1], 14),
                          20.0f, 2.0f, pal.ok, pulse);
 
-`cui_iso_layout_row`, `_ring` and `_grid` hand out places; `cui_iso_on` stacks;
+`cui_iso_layout_row_ex`, `_ring_ex` and `_grid_ex` hand out places; `cui_iso_on` stacks;
 `cui_iso_link_between` connects two slots and trims each end to the edge.
 Converting one bundled case this way took it from nine coordinates to three, and
 the three left are gaps, not positions.

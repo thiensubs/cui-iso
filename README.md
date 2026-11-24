@@ -124,18 +124,23 @@ You ask for a layout, place solids at the slots it gives you, and stack with
 
 ```c
 cui_iso_slot station[3];
-cui_iso_layout_row(station, 3, 0, 0, 0, 110);   // three places, 110 apart
+cui_iso_layout_row_ex(station, 3,
+    &(cui_iso_layout_row_opts){ .spacing = 110 });   // three places, 110 apart
 
-cui_iso_slab(&scene, station[0].x, station[0].y, 0, 70, 58, 14, top, side);
-cui_iso_sphere(&scene, station[0].x, station[0].y, 14, 8, accent);
+cui_iso_slab_named(scene,
+    .cx = station[0].x, .cy = station[0].y, .z_top = 0,
+    .w = 70, .d = 58, .height = 14, .top = top, .side = side);
+cui_iso_sphere_named(scene,
+    .x = station[0].x, .y = station[0].y, .z = 14, .radius = 8, .color = accent);
 
 /* connect two slots; the link is trimmed to their edges automatically */
-cui_iso_link_between(&scene, cui_iso_on(station[0], 14),
+cui_iso_link_between(scene, cui_iso_on(station[0], 14),
                      cui_iso_on(station[1], 14), 20.0f, 2.0f, color, pulse);
 ```
 
-The library also hands out rings (`cui_iso_layout_ring`) and grids
-(`cui_iso_layout_grid`). A scene written this way has no coordinate numbers
+The library also hands out rings (`cui_iso_layout_ring_ex`) and grids
+(`cui_iso_layout_grid_ex`). Solids take named fields (`_named`, or `_ex` with an
+options struct); include `<cui/cui_iso_opts.h>` for those. A scene written this way has no coordinate numbers
 in it at all — you tune the numbers that are real choices (how big, how far
 apart, how high) and never work out a position. Rewriting one of the bundled
 cases this way took it from nine hand-computed coordinates to three, and the
@@ -144,28 +149,34 @@ three that remain are gap sizes, not positions.
 ## A diorama in a few lines
 
 ```c
-static cui_iso_scene scene;
+static cui_iso_scene *scene;
 
 void draw_diorama(cui_ctx *ui)
 {
+    if (!scene) scene = cui_iso_scene_create();
     cui_iso_camera cam = { .az = 0.6f, .cx = 380, .cy = 300, .scale = 1.0f };
 
-    cui_iso_begin(&scene, &cam);
-    cui_iso_shadow(&scene, 0, 0, 0, 150, 150, CUI_RGBA(0x00000040));
-    cui_iso_slab(&scene, 0, 0, 0, 220, 220, 12,
-                 CUI_RGB(0x2a2f38), CUI_RGB(0x1b1f26));
-    cui_iso_box(&scene, -50, -30, 12, 60, 60, 48, 8,
-                CUI_RGB(0x4a5568), CUI_RGB(0x3a4350));
-    cui_iso_box(&scene, 55, 40, 12, 50, 70, 30, 6,
-                CUI_RGB(0x5b6b4a), CUI_RGB(0x46523a));
-    cui_iso_glass(&scene, -50, -30, 12, 60, 60, 56, CUI_RGBA(0xafca4c30));
-    cui_iso_end(&scene, ui);
+    cui_iso_begin(scene, &cam);
+    cui_iso_shadow_named(scene, .rx = 150, .ry = 150,
+                         .color = CUI_RGBA(0x00000040));
+    cui_iso_slab_named(scene, .w = 220, .d = 220, .height = 12,
+                       .top = CUI_RGB(0x2a2f38), .side = CUI_RGB(0x1b1f26));
+    cui_iso_box_named(scene, .cx = -50, .cy = -30, .z_top = 12,
+                      .w = 60, .d = 60, .height = 48, .chamfer = 8,
+                      .top = CUI_RGB(0x4a5568), .side = CUI_RGB(0x3a4350));
+    cui_iso_box_named(scene, .cx = 55, .cy = 40, .z_top = 12,
+                      .w = 50, .d = 70, .height = 30, .chamfer = 6,
+                      .top = CUI_RGB(0x5b6b4a), .side = CUI_RGB(0x46523a));
+    cui_iso_glass_named(scene, .cx = -50, .cy = -30, .z_bottom = 12,
+                        .w = 60, .d = 60, .height = 56,
+                        .tint = CUI_RGBA(0xafca4c30));
+    cui_iso_end(scene, ui);
 }
 ```
 
 Before `cui-iso`, that meant hand-writing the projection, the prism
 tessellation, the per-face shading, and the depth sort. Now it is six
-calls and a camera. Call `cui_iso_scene_reset(&scene)` (or just re-`begin`)
+calls and a camera. Call `cui_iso_scene_reset(scene)` (or just re-`begin`)
 each frame; the scene reuses its storage, so there is nothing to free
 between frames.
 
@@ -220,3 +231,14 @@ cmake -S . -B build
 cmake --build build
 ./build/cui_iso_render && open out.png
 ```
+
+Or install it and include it from your own project:
+
+```sh
+cmake --install build --prefix /usr/local
+```
+
+That puts `libcui_iso.a` in `lib/` and the public headers in `include/cui/`.
+Include `<cui/cui_iso.h>` for the scene, camera and helpers, and
+`<cui/cui_iso_opts.h>` for the named-field solids. If CUI is not beside this
+directory, configure with `-DCUI_ISO_CUI_DIR=/path/to/CUI`.
