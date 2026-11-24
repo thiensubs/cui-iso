@@ -20,7 +20,9 @@ include(${CUI_ISO_CUI_DIR}/cmake/CuiApp.cmake)
 # The reusable layer. Build it as a library so an app links cui_iso and gets
 # the whole diorama API; nothing here depends on mcpd-ui.
 add_library(cui_iso cui_iso.c cui_iso_opts.c)
-target_include_directories(cui_iso PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(cui_iso PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:include>)
 target_link_libraries(cui_iso PUBLIC cui::cui)
 
 # Headless proof: renders a scene with the software renderer and writes a PNG.
@@ -112,3 +114,10 @@ target_link_libraries(top10 PRIVATE cui_iso)
 add_executable(cui_iso_demo scene_demo.c)
 target_link_libraries(cui_iso_demo PRIVATE cui_iso)
 cui_app_target(cui_iso_demo)
+
+# Install the public headers and the static library so a consumer can
+# use find_package(cui_iso) instead of add_subdirectory.
+include(GNUInstallDirs)
+install(TARGETS cui_iso EXPORT cui_isoTargets ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(DIRECTORY include/cui DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(EXPORT cui_isoTargets NAMESPACE cui_iso:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cui_iso)
