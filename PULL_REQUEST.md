@@ -55,6 +55,18 @@ Run on macOS, AppleClang 17.0.0, x86_64, from a clean `git archive` export
     warnings=0
     100% tests passed out of 9
 
+Two further checks, both mechanical rather than visual:
+
+- Every example compiles against the public headers alone with
+  `-Wall -Wextra -Werror`; none of them includes `cui_iso_internal.h`.
+- Converting the examples to the named forms changed no output: the ten
+  rendered PNGs are byte-identical before and after, combined md5
+  `a1e4b5f5864aa5965aacec414f06c1c0` either way.
+- `cmake --install` to a prefix, then a translation unit that includes only
+  `<cui/cui_iso.h>` and `<cui/cui_iso_opts.h>` compiles against that prefix
+  with `-Wall -Wextra -Werror`. Before the install rules, the prefix
+  contained no headers at all.
+
 The nine tests, and the negative control each was measured against:
 
 | Test | Asserts | Negative control |
@@ -100,15 +112,20 @@ The OpenGL renderer path was not exercised: no test here drives a window.
 
 ## Risks and gaps, stated plainly
 
-- **Two spellings per solid.** The fourteen solids take named fields through
-  `*_ex` and opts structs, and keep their positional forms, which `cui_iso_box`
-  has seven of. `docs/CONTRIBUTING.md` prefers named arguments because a diff
-  cannot show which float changed. The honest end state is one spelling:
-  `cui_iso_box_named(sc, .cx = 0, .w = 70)` (or `cui_iso_box_ex(sc, &(cui_iso_box_opts){...})`), verified to compile here. I did not do it
-  because it rewrites every example and every call in this repository, which is
-  not what a first pull request should ask a reviewer to read. If you would
-  rather not carry both, say so and the follow-up deletes the positional forms
-  instead of keeping them as forwards.
+- **One spelling per solid, with two documented exceptions.** Every solid is
+  constructed through `*_ex` and its options struct, or the `*_named` macro over
+  it. The positional constructors are declared only in `cui_iso_internal.h`, for
+  the library's own forwarding code and the tests that compare the two forms.
+  Two positional declarations stay public because their arguments are not
+  interchangeable floats: `cui_iso_text` (three floats, a string and a colour)
+  and `cui_iso_ring` (count, time, bool, callback). The four hit-test predicates
+  still take six to eight floats each and are recorded as the remaining
+  exception in the audit.
+- **Install is part of the deliverable.** `cmake --install` ships the static
+  library and the public headers under `include/cui/`, and the exported target
+  splits `BUILD_INTERFACE` from `INSTALL_INTERFACE` so no source path leaks.
+  Verified by installing to a prefix and compiling an outside translation unit
+  against that prefix alone with `-Wall -Wextra -Werror`.
 - **The palette has fixed status hues.** `cui_iso_palette` derives neutrals from
   the theme, but `ok`/`warn`/`bad` are constants, on the argument that failure
   should look like failure in either theme. If a scene should take its colour
