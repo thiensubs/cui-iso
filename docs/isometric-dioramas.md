@@ -11,8 +11,8 @@ and every project that wants one rewrites it.
 your UI and works on every backend, because it draws with the same `cui_draw_*`
 calls.
 
-![Dark](../images/dioramas-dark.png)
-![Light](../images/dioramas-light.png)
+![Dark](images/dioramas-dark.png)
+![Light](images/dioramas-light.png)
 
 ## What it costs
 
