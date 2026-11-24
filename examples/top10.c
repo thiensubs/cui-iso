@@ -173,9 +173,12 @@ static void case_trace(float t) {
                              .color = i == 2 ? A() : B());
         if (i < 3) {
             cui_iso_slot next = cui_iso_on(hop[i + 1], lift[i + 1]);
-            cui_iso_link_labeled(sc, at.x, at.y, at.z + 16, next.x, next.y,
-                                 next.z + 16, 2.0f, B(), t + i * 0.3f, "ms",
-                                 12.0f + i * 9, 0);
+            cui_iso_link_labeled_named(sc,
+                                       .x1 = at.x, .y1 = at.y, .z1 = at.z + 16,
+                                       .x2 = next.x, .y2 = next.y, .z2 = next.z + 16,
+                                       .thickness = 2.0f, .color = B(),
+                                       .pulse = t + i * 0.3f, .label = "ms",
+                                       .value = 12.0f + i * 9, .decimals = 0);
         }
     }
     end_case("/tmp/top10/05_trace.png");

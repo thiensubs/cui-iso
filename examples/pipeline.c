@@ -121,10 +121,13 @@ static void paint(cui_ctx *ui, cui_rect rect, void *user) {
         stage_pos(i + 1, &x1, &y1);
         float pulse = (STAGES[i].state == ST_RUNNING)
                           ? (a->t - floorf(a->t)) : -1.0f;
-        cui_iso_link_labeled(a->scene, x0 + 26.0f, y0, 8.0f,
-                             x1 - 26.0f, y1, 8.0f, 2.4f,
-                             state_color(STAGES[i].state), pulse,
-                             "", STAGES[i].seconds, 0);
+        cui_iso_link_labeled_named(a->scene,
+                                   .x1 = x0 + 26.0f, .y1 = y0, .z1 = 8.0f,
+                                   .x2 = x1 - 26.0f, .y2 = y1, .z2 = 8.0f,
+                                   .thickness = 2.4f,
+                                   .color = state_color(STAGES[i].state),
+                                   .pulse = pulse, .label = "",
+                                   .value = STAGES[i].seconds, .decimals = 0);
     }
     cui_iso_end(a->scene, ui);
 
