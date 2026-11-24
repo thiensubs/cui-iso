@@ -49,3 +49,20 @@ Tiers used below: **Verified** means a command was run and its output read;
 - 32-bit targets.
 - Float behaviour with `-ffast-math`.
 - Real window backends (Cocoa/X11/Win32): the tests use the software renderer.
+## Review pass over the pull request (11 findings)
+
+Closed upstream-facing review findings, each with the check that proves it.
+
+| # | Finding | Evidence after the fix |
+|---|---------|------------------------|
+| 1 | A parent `BUILD_SHARED_LIBS=ON` could turn the library into a shared object. | `add_library(cui_iso STATIC ...)`; configured with `-DBUILD_SHARED_LIBS=ON` and the target is still static. |
+| 2 | `<cui/cui_iso_opts.h>` did not resolve in `add_subdirectory` builds. | `include/` added to `BUILD_INTERFACE`; a source-tree build includes it from `extensions/cui-iso/include/cui/`. |
+| 3 | Sanitizers covered the test drivers only, so ASan saw no library code. | Directory-wide `add_compile_options`/`add_link_options`. Found by failure first: a sanitized library linked into an unsanitized executable failed with `undefined __asan_init`. |
+| 4 | Windowed examples were configured even when `CUI_WITH_APP=OFF` removed the app layer. | Both `cui_app_target` uses are inside `if(CUI_WITH_APP)`. |
+| 5 | Install shipped targets but no `find_package` config. | `cui_isoConfig.cmake` + version file installed under `lib/cmake/cui_iso`; a fresh project using `find_package(cui_iso CONFIG REQUIRED)` configures, builds and runs. |
+| 6 | Cylinder strips sorted by a fixed world angle, so a tall cylinder's rear strips could paint over its visible barrel once the camera orbits. | Key is `cui_iso_depth(cam, ...)`. The sort test still renders byte-identically, which is the proof the order only changes off `az = 0`. |
+| 7 | `cui_iso_pick` selected solids outside the bounds `cui_iso_end` clipped to. | Pick rejects the point, not the solid; a partly clipped solid stays selectable on its visible part. Test: two self-locating cases in `test_cui_iso_pick`. |
+| 8 | Pick kept the first hit on a depth tie while the sort painted the later solid on top. | `>=` in the comparison; the test renders two spheres, picks, swaps the insertion order and requires the answer to change. |
+| 9 | `extern "C"` closed before `cui_iso_palette_default`, so a C++ caller linked a mangled symbol. | Guard extended past it; `nm` on a C++ object shows `_cui_iso_palette_default`, not `__Z23cui_iso_palette_defaultP7cui_ctx`. |
+| 10 | Recoverable UBSan findings printed and the tests still passed. | `-fno-sanitize-recover=all` in the sanitizer build. |
+| 11 | The vendored `include/cui` headers drifted from the source headers, so an install shipped an old header. | CI diffs the two, with the em dash substituted. Caught only by testing against the install prefix rather than the source tree. |
