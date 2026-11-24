@@ -7,7 +7,6 @@
  * then compose them with the PIL script in tools/contact_sheet.py.
  */
 #include "cui_iso.h"
-#include "cui_iso_internal.h"
 #include "cui_iso_opts.h"
 #include <cui/cui_render.h>
 
@@ -80,13 +79,17 @@ static void case_pipeline(float t) {
     struct { float x; cui_color c; } st[5] = {
         { -120, G() }, { -60, G() }, { 0, A() }, { 60, N() }, { 120, N() } };
     for (int i = 0; i < 5; i++) {
-        cui_iso_slab(sc, st[i].x, 0, 0, 40, 40, 10,
-                     CUI_RGB(0x3a3f47), CUI_RGB(0x23262b));
+        cui_iso_slab_named(sc,
+                           .cx = st[i].x, .cy = 0, .z_top = 0, .w = 40, .d = 40, .height = 10,
+                           .top = CUI_RGB(0x3a3f47), .side = CUI_RGB(0x23262b));
         cui_iso_sphere_named(sc,
                              .x = st[i].x, .y = 0, .z = 16, .radius = 7, .color = st[i].c);
         if (i < 4)
-            cui_iso_link(sc, st[i].x + 14, 0, 6, st[i + 1].x - 14, 0, 6, 2.0f,
-                         st[i].c, (st[i].c.a == A().a) ? t : -1.0f);
+            cui_iso_link_named(sc,
+                               .x1 = st[i].x + 14, .y1 = 0, .z1 = 6,
+                               .x2 = st[i + 1].x - 14, .y2 = 0, .z2 = 6,
+                               .thickness = 2.0f, .color = st[i].c,
+                               .pulse = (st[i].c.a == A().a) ? t : -1.0f);
     }
     end_case("/tmp/top10/02_ci_pipeline.png");
 }
@@ -101,8 +104,11 @@ static void case_k8s(float t) {
                            .cx = nx[n], .cy = 0, .z_top = 0, .w = 66, .d = 52, .height = 10,
                            .top = CUI_RGB(0x3a3f47), .side = CUI_RGB(0x23262b));
         for (int p = 0; p < 3; p++)
-            cui_iso_box(sc, nx[n] - 18 + p * 18, 0, 10, 14, 14, 12, 3,
-                        (n == 1 && p == 1) ? A() : B(), CUI_RGB(0x23262b));
+            cui_iso_box_named(sc,
+                              .cx = nx[n] - 18 + p * 18, .cy = 0, .z_top = 10,
+                              .w = 14, .d = 14, .height = 12, .chamfer = 3,
+                              .top = (n == 1 && p == 1) ? A() : B(),
+                              .side = CUI_RGB(0x23262b));
     }
     (void)t;
     end_case("/tmp/top10/03_kubernetes.png");
@@ -122,17 +128,25 @@ static void case_etl(float t) {
     cui_iso_slot src[2];
     cui_iso_layout_row_ex(src, 2, &(cui_iso_layout_row_opts){ .x = station[0].x, .y = 0, .z = 0, .spacing = 80 });
     for (int i = 0; i < 2; i++) {
-        cui_iso_slab(sc, src[i].x, src[i].y, 0, 30, 30, 10,
-                     CUI_RGB(0x3a3f47), CUI_RGB(0x23262b));
-        cui_iso_cylinder(sc, src[i].x, src[i].y, 0, 16, 26, 20,
-                         B(), CUI_RGB(0x1f3a52));
+        cui_iso_slab_named(sc,
+                           .cx = src[i].x, .cy = src[i].y, .z_top = 0,
+                           .w = 30, .d = 30, .height = 10,
+                           .top = CUI_RGB(0x3a3f47), .side = CUI_RGB(0x23262b));
+        cui_iso_cylinder_named(sc,
+                               .cx = src[i].x, .cy = src[i].y, .z_bottom = 0,
+                               .radius = 16, .height = 26, .sides = 20,
+                               .top = B(), .side = CUI_RGB(0x1f3a52));
     }
 
     /* the transform, and the warehouse it feeds */
-    cui_iso_box(sc, station[1].x, station[1].y, 0, 46, 46, 30, 5,
-                CUI_RGB(0x5c6169), CUI_RGB(0x2c2f33));
-    cui_iso_cylinder(sc, station[2].x, station[2].y, 0, 30, 40, 24,
-                     G(), CUI_RGB(0x1f4a34));
+    cui_iso_box_named(sc,
+                      .cx = station[1].x, .cy = station[1].y, .z_top = 0,
+                      .w = 46, .d = 46, .height = 30, .chamfer = 5,
+                      .top = CUI_RGB(0x5c6169), .side = CUI_RGB(0x2c2f33));
+    cui_iso_cylinder_named(sc,
+                           .cx = station[2].x, .cy = station[2].y, .z_bottom = 0,
+                           .radius = 30, .height = 40, .sides = 24,
+                           .top = G(), .side = CUI_RGB(0x1f4a34));
 
     /* links: the library trims each end to the slot edge — no offsets to work out */
     cui_iso_link_between(sc, cui_iso_on(src[0], 18), cui_iso_on(station[1], 16),
@@ -176,8 +190,10 @@ static void case_datacenter(float t) {
                       .chamfer = 3, .top = CUI_RGB(0x5c6169), .side = CUI_RGB(0x2c2f33));
     for (int i = 0; i < 3; i++) {
         float x = -90 + i * 90;
-        cui_iso_disk_stack(sc, x, 20, 0, 20, 4, 8, 4, 20,
-                           CUI_RGB(0x9fd14f), CUI_RGB(0x3f5a24));
+        cui_iso_disk_stack_named(sc,
+                                 .cx = x, .cy = 20, .z_bottom = 0, .radius = 20,
+                                 .count = 4, .disk_h = 8, .gap = 4, .sides = 20,
+                                 .top = CUI_RGB(0x9fd14f), .side = CUI_RGB(0x3f5a24));
         cui_iso_link_named(sc,
                            .x1 = x, .y1 = 12, .z1 = 18, .x2 = x * 0.3f, .y2 = -48, .z2 = 16,
                            .thickness = 2.0f, .color = G(), .pulse = t + i * 0.33f);
@@ -240,8 +256,10 @@ static void case_factory(float t) {
     cui_iso_layout_row_ex(st, 5, &(cui_iso_layout_row_opts){ .x = 0, .y = 0, .z = 0, .spacing = 55 });
     for (int i = 0; i < 5; i++) {
         cui_color c = (i == 3) ? R() : (i < 3 ? G() : N());
-        cui_iso_box(sc, st[i].x, st[i].y, 0, 34, 30, 18, 4,
-                    CUI_RGB(0x3a3f47), CUI_RGB(0x23262b));
+        cui_iso_box_named(sc,
+                          .cx = st[i].x, .cy = st[i].y, .z_top = 0,
+                          .w = 34, .d = 30, .height = 18, .chamfer = 4,
+                          .top = CUI_RGB(0x3a3f47), .side = CUI_RGB(0x23262b));
         cui_iso_sphere_named(sc,
                              .x = st[i].x, .y = st[i].y, .z = 24, .radius = 6, .color = c);
         if (i < 4)

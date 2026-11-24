@@ -14,7 +14,6 @@
  * cui_draw_* calls through cui-iso; no WebGL, no assets.
  */
 #include "cui_iso.h"
-#include "cui_iso_internal.h"
 #include "cui_iso_opts.h"
 #include <cui/cui_app.h>
 
@@ -89,8 +88,9 @@ static void paint(cui_ctx *ui, cui_rect rect, void *user) {
     (void)rect;
 
     cui_iso_begin(a->scene, &a->cam);
-    cui_iso_grid(a->scene, 0, 0, 0, 16, 46,
-                 CUI_RGB(0x171a1f), CUI_RGB(0x23272e));
+    cui_iso_grid_named(a->scene,
+                       .cx = 0, .cy = 0, .z = 0, .cells = 16, .cell = 46,
+                       .fill = CUI_RGB(0x171a1f), .line = CUI_RGB(0x23272e));
 
     /* solids: a contact shadow, platform and status marker per stage */
     for (int i = 0; i < NSTAGES; i++) {
@@ -101,11 +101,16 @@ static void paint(cui_ctx *ui, cui_rect rect, void *user) {
         bool active = (i == a->hover || i == a->selected);
         float lift = (st->state == ST_RUNNING) ? 6.0f : 0.0f;
 
-        cui_iso_shadow(a->scene, x, y, 0.5f, 36, 24, (cui_color){0, 0, 0, 80});
-        cui_iso_slab(a->scene, x, y, 0, 70, 58, 14,
-                     active ? CUI_RGB(0x454a53) : CUI_RGB(0x3a3f47),
-                     CUI_RGB(0x23262b));
-        cui_iso_sphere(a->scene, x, y, 14 + lift, active ? 9.5f : 8.0f, accent);
+        cui_iso_shadow_named(a->scene,
+                             .cx = x, .cy = y, .z = 0.5f, .rx = 36, .ry = 24,
+                             .color = (cui_color){0, 0, 0, 80});
+        cui_iso_slab_named(a->scene,
+                           .cx = x, .cy = y, .z_top = 0, .w = 70, .d = 58, .height = 14,
+                           .top = active ? CUI_RGB(0x454a53) : CUI_RGB(0x3a3f47),
+                           .side = CUI_RGB(0x23262b));
+        cui_iso_sphere_named(a->scene,
+                             .x = x, .y = y, .z = 14 + lift,
+                             .radius = active ? 9.5f : 8.0f, .color = accent);
     }
 
     /* connectors carrying each stage's duration */
