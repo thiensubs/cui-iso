@@ -172,7 +172,8 @@ CUI_API int cui_iso_scene_count(const cui_iso_scene *s);
 /* Clip every solid to this rectangle on screen, e.g. the canvas a diorama is
  * painted into, so a large scale cannot bleed over neighbouring widgets. End
  * pushes the clip before its first solid and pops it after its last, so the
- * calls pair. Unset is the default: draw anywhere. */
+ * calls pair. Unset is the default: draw anywhere. A zero or negative width or
+ * height clears the clip, so the same scene can stop drawing to a canvas. */
 CUI_API void cui_iso_set_bounds(cui_iso_scene *s, cui_rect r);
 
 /* Replace the scene's light. The default matches the mcpd look; flip x and y
@@ -310,10 +311,6 @@ CUI_API bool cui_iso_hit_cylinder(const cui_iso_camera *cam, float sx, float sy,
  * was just drawn there. */
 CUI_API int cui_iso_pick(cui_iso_scene *s, float sx, float sy);
 
-#ifdef __cplusplus
-}
-#endif
-
 /* ---- palette -------------------------------------------------------------
  *
  * A theme-aware palette for dioramas. The neutral entries (plate, plate_side,
@@ -325,7 +322,8 @@ CUI_API int cui_iso_pick(cui_iso_scene *s, float sx, float sy);
  * Most callers should use this instead of raw CUI_RGB(0x..) literals:
  *
  *   cui_iso_palette pal = cui_iso_palette_default(ui);
- *   cui_iso_box(sc, 0, 0, 30, 70, 70, 60, 10, pal.block, pal.block_side);
+ *   cui_iso_box_named(sc, .w = 70, .d = 70, .height = 60, .chamfer = 10,
+ *                      .top = pal.block, .side = pal.block_side);
  */
 typedef struct cui_iso_palette {
     cui_color plate, plate_side;    /* a platform: top face, shaded sides */
@@ -338,5 +336,9 @@ typedef struct cui_iso_palette {
 } cui_iso_palette;
 
 CUI_API cui_iso_palette cui_iso_palette_default(cui_ctx *ui);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* CUI_ISO_H */

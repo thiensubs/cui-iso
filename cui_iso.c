@@ -216,6 +216,12 @@ void cui_iso_set_light(cui_iso_scene *s, cui_iso_light light) {
 
 void cui_iso_set_bounds(cui_iso_scene *s, cui_rect r) {
     if (!s) return;
+    /* A zero or negative size clears the clip, so the same scene can move from
+     * a clipped canvas to drawing anywhere without replacing the scene. */
+    if (r.w <= 0.0f || r.h <= 0.0f) {
+        s->has_bounds = false;
+        return;
+    }
     s->bounds = r;
     s->has_bounds = true;
 }
@@ -647,7 +653,12 @@ static void cui_iso__draw_cylinder(cui_ctx *ui, const cui_iso_camera *cam,
     for (int i = 0; i < sides; i++) {
         order[i] = i;
         float am = ((float)i + 0.5f) / (float)sides * 2.0f * CUI_PI;
-        key[i] = cosf(am) + sinf(am);          /* larger = closer to camera */
+        /* The key is camera-relative depth, not a world angle: the projection
+         * rotates with cam->az, so a fixed angle inverts once the camera passes
+         * az = pi/4 and the rear strips would paint over the visible barrel.
+         * The rim centre is shared by every strip, so the depth offset is a
+         * constant and only the order changes, and only off az = 0. */
+        key[i] = cui_iso_depth(cam, cosf(am), sinf(am));  /* larger = closer to camera */
     }
     for (int i = 1; i < sides; i++) {
         int cur = order[i];
@@ -1115,6 +1126,14 @@ bool cui_iso_hit_cylinder(const cui_iso_camera *cam, float sx, float sy,
  */
 int cui_iso_pick(cui_iso_scene *s, float sx, float sy) {
     if (!s) return -1;
+    /* cui_iso_end clips drawing to the bounds, so picking must agree with what
+     * was painted: a click outside them selects nothing. A solid that is only
+     * partly clipped stays selectable on its visible part, because the test
+     * rejects the point, not the solid. */
+    if (s->has_bounds) {
+        cui_rect r = s->bounds;
+        if (sx < r.x || sy < r.y || sx > r.x + r.w || sy > r.y + r.h) return -1;
+    }
     int best = -1;
     float best_key = 0.0f;
     for (int i = 0; i < s->count; i++) {
@@ -1138,7 +1157,10 @@ int cui_iso_pick(cui_iso_scene *s, float sx, float sy) {
         }
         if (hit) {
             float k = cui_iso__key(&s->cam, o) + o->bias;
-            if (best < 0 || k > best_key) { best = i; best_key = k; }
+            /* >= so the later insertion wins a tie: the sort paints it on top,
+             * so picking the first hit at an equal key would name one solid and
+             * show another. */
+            if (best < 0 || k >= best_key) { best = i; best_key = k; }
         }
     }
     return best;

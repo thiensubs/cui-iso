@@ -102,10 +102,87 @@ static int check(const char *name, int which, long *painted, long *dead,
     return 1;
 }
 
+/* Two solids at the same depth key, drawn and picked: the sort paints the
+ * later insertion on top, so picking must name it too. The pixel is found by
+ * scanning, so the test does not carry a coordinate that can drift. */
+static int tie_break(cui_iso_scene *sc) {
+    float sx = -1.0f, sy = -1.0f;
+    cui_iso_begin(sc, &CAM);
+    cui_iso_sphere(sc, -30.0f, 20.0f, 40.0f, 26.0f, CUI_RGB(0xffffff));
+    cui_iso_sphere(sc, 30.0f, -20.0f, 40.0f, 26.0f, CUI_RGB(0xffffff));
+    cui_iso_end(sc, NULL);
+    for (int y = 0; y < H && sy < 0; y++)
+        for (int x = 0; x < W; x++)
+            if (cui_iso_pick(sc, (float)x, (float)y) >= 0) { sx = (float)x; sy = (float)y; goto found; }
+found:
+    if (sy < 0) {
+        fprintf(stderr, "FAIL tie-break: no pixel selected either sphere\n");
+        return 0;
+    }
+    int front = cui_iso_pick(sc, sx, sy);
+    /* swap the insertion order and ask again; the answer must follow the paint */
+    cui_iso_begin(sc, &CAM);
+    cui_iso_sphere(sc, 30.0f, -20.0f, 40.0f, 26.0f, CUI_RGB(0xffffff));
+    cui_iso_sphere(sc, -30.0f, 20.0f, 40.0f, 26.0f, CUI_RGB(0xffffff));
+    cui_iso_end(sc, NULL);
+    int other = cui_iso_pick(sc, sx, sy);
+    if (front == other) {
+        fprintf(stderr, "FAIL tie-break: pick named %d both ways; the later "
+                        "insertion must win\n", front);
+        return 0;
+    }
+    printf("ok   tie-break: pick follows the painted order (%d, then %d)\n",
+           front, other);
+    return 1;
+}
+
+/* A click outside the bounds the scene clips to must select nothing, and one
+ * inside must still select a solid that is only partly clipped. The click point
+ * is found by scanning. */
+static int bounds_respected(cui_iso_scene *sc) {
+    cui_iso_begin(sc, &CAM);
+    cui_iso_box(sc, 0, 0, 0, 80, 80, 60, 12,
+                CUI_RGB(0xffffff), CUI_RGB(0xffffff));
+    cui_iso_end(sc, NULL);
+    float sx = -1.0f, sy = -1.0f;
+    for (int y = 0; y < H && sy < 0; y++)
+        for (int x = 0; x < W; x++)
+            if (cui_iso_pick(sc, (float)x, (float)y) >= 0) { sx = (float)x; sy = (float)y; goto found; }
+found:
+    if (sy < 0) {
+        fprintf(stderr, "FAIL bounds: the box selected nothing at all\n");
+        return 0;
+    }
+    /* bounds that exclude the found point */
+    cui_rect out = { 0.0f, 0.0f, sx - 8.0f, (float)H };
+    cui_iso_set_bounds(sc, out);
+    if (cui_iso_pick(sc, sx, sy) >= 0) {
+        fprintf(stderr, "FAIL bounds: a click the bounds exclude selected a "
+                        "solid\n");
+        return 0;
+    }
+    /* bounds that exclude nothing: clipped or not, that point still hits */
+    cui_rect in = { 0.0f, 0.0f, (float)W, (float)H };
+    cui_iso_set_bounds(sc, in);
+    if (cui_iso_pick(sc, sx, sy) < 0) {
+        fprintf(stderr, "FAIL bounds: a click inside the bounds selected "
+                        "nothing\n");
+        return 0;
+    }
+    cui_iso_set_bounds(sc, (cui_rect){ 0.0f, 0.0f, -1.0f, -1.0f });
+    printf("ok   bounds: excluded click rejected, in-bounds click still picks\n");
+    return 1;
+}
+
 int main(void) {
     long p, d, f;
     int ok = 1;
     ok &= check("box", 0, &p, &d, &f);
     ok &= check("cylinder", 1, &p, &d, &f);
+
+    cui_iso_scene *sc = cui_iso_scene_create();
+    ok &= tie_break(sc);
+    ok &= bounds_respected(sc);
+    cui_iso_scene_destroy(sc);
     return ok ? 0 : 1;
 }
