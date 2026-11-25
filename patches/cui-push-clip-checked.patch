@@ -1,0 +1,44 @@
+diff --git a/include/cui/cui.h b/include/cui/cui.h
+index 5fc788f..ba7939a 100644
+--- a/include/cui/cui.h
++++ b/include/cui/cui.h
+@@ -4236,6 +4236,11 @@ CUI_API void cui_draw_text(cui_ctx *ui, cui_font font, float size, cui_vec2 pos,
+ CUI_API void cui_draw_icon(cui_ctx *ui, const char *icon, cui_rect r, float size, cui_color color);
+ CUI_API void cui_draw_image(cui_ctx *ui, cui_texture tex, cui_rect r, cui_rect uv, cui_corners radius, cui_color tint);
+ CUI_API void cui_push_clip(cui_ctx *ui, cui_rect r);
++/* Pushes a clip and reports whether it was applied. The clip stack is 64 deep;
++ * past that a push is refused, and the matching pop would then remove the
++ * caller's own clip. Use this when the push may fail: on false the clip was
++ * NOT applied, so do not call cui_pop_clip for it. */
++CUI_API bool cui_push_clip_checked(cui_ctx *ui, cui_rect r);
+ CUI_API void cui_pop_clip(cui_ctx *ui);
+ 
+ /* Canvas: a box of the given size that you paint yourself. The callback
+diff --git a/src/cui_draw.c b/src/cui_draw.c
+index 0a491bb..ec59fd1 100644
+--- a/src/cui_draw.c
++++ b/src/cui_draw.c
+@@ -60,7 +60,7 @@ static inline cui_color cui__xa(cui_color c, float a) {
+     return c;
+ }
+ 
+-void cui_push_clip(cui_ctx *ui, cui_rect r) {
++bool cui_push_clip_checked(cui_ctx *ui, cui_rect r) {
+     cui_draw_list *dl = &ui->dl;
+     cui_xform x = cui__xf(ui);
+     float s = ui->scale;
+@@ -69,9 +69,13 @@ void cui_push_clip(cui_ctx *ui, cui_rect r) {
+     float x0 = floorf(px.x), y0 = floorf(px.y), x1 = ceilf(px.x + px.w), y1 = ceilf(px.y + px.h);
+     px.x = x0; px.y = y0; px.w = x1 - x0; px.h = y1 - y0;
+     cui_rect cur = dl->clip_stack[dl->clip_depth - 1];
+-    if (dl->clip_depth < 64) dl->clip_stack[dl->clip_depth++] = cui__rect_intersect(cur, px);
++    if (dl->clip_depth >= 64) return false;
++    dl->clip_stack[dl->clip_depth++] = cui__rect_intersect(cur, px);
++    return true;
+ }
+ 
++void cui_push_clip(cui_ctx *ui, cui_rect r) { (void)cui_push_clip_checked(ui, r); }
++
+ void cui_pop_clip(cui_ctx *ui) { if (ui->dl.clip_depth > 1) ui->dl.clip_depth--; }
+ 
+ static void cui__set_texture(cui_ctx *ui, cui_texture t) { ui->dl.cur_tex = t; }

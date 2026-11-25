@@ -174,6 +174,40 @@ found:
     return 1;
 }
 
+/* The clickable area of a box is its chamfered silhouette, not the rectangle
+ * it was built from. A click in the corner the chamfer cut away must select
+ * nothing, and a click just inside the cut must select the box.
+ *
+ * World (-38, -38) is inside the 80x80 footprint but inside the corner a
+ * 12-unit chamfer removes; world (-27, -39) is just past the cut edge. */
+static int chamfered_box_pick(void) {
+    cui_iso_scene *sc = cui_iso_scene_create();
+    cui_iso_begin(sc, &CAM);
+    cui_iso_box(sc, 0, 0, 0, 80, 80, 60, 12,
+                CUI_RGB(0xffffff), CUI_RGB(0xffffff));
+    cui_iso_end(sc, NULL);
+
+    cui_vec2 out = cui_iso_project(&CAM, -38.0f, -38.0f, 0.0f);
+    cui_vec2 in = cui_iso_project(&CAM, -27.0f, -39.0f, 0.0f);
+    int hit_out = cui_iso_pick(sc, out.x, out.y);
+    int hit_in = cui_iso_pick(sc, in.x, in.y);
+    cui_iso_scene_destroy(sc);
+
+    if (hit_out >= 0) {
+        fprintf(stderr, "FAIL chamfer: a click in the cut-away corner at "
+                        "(%.1f, %.1f) selected solid %d\n",
+                out.x, out.y, hit_out);
+        return 0;
+    }
+    if (hit_in < 0) {
+        fprintf(stderr, "FAIL chamfer: a click inside the shape at "
+                        "(%.1f, %.1f) selected nothing\n", in.x, in.y);
+        return 0;
+    }
+    printf("ok   chamfer: the corner the chamfer cut away is not pickable\n");
+    return 1;
+}
+
 int main(void) {
     long p, d, f;
     int ok = 1;
@@ -184,5 +218,6 @@ int main(void) {
     ok &= tie_break(sc);
     ok &= bounds_respected(sc);
     cui_iso_scene_destroy(sc);
+    ok &= chamfered_box_pick();
     return ok ? 0 : 1;
 }

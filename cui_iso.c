@@ -14,6 +14,16 @@
 #define CUI_ISO_COS30 0.8660254f
 #define CUI_ISO_SIN30 0.5f
 
+/* The most divisions per side the ground grid will draw. Capped so the count
+ * survives the round trip through the solid's float field and the draw loop
+ * stays bounded: a floor with a million divisions is not a scene. */
+#define CUI_ISO_MAX_GRID_DIV 1024
+
+/* The most sides a cylinder is drawn with, and the most points one rim hull
+ * contributes: the picking code hulls the top and bottom rim together. */
+#define CUI_ISO_MAX_CYL_SIDES 64
+#define CUI_ISO_MAX_HULL_PTS (2 * CUI_ISO_MAX_CYL_SIDES)
+
 /* Link and arc are drawn as the same three-layer strand: a wide translucent
  * glow, a body, and a bright core. One set of weights for both, so they read as
  * one material instead of two that happen to look alike. */
@@ -93,6 +103,7 @@ cui_iso_slot cui_iso_on(cui_iso_slot s, float height) {
 
 int cui_iso_layout_row(cui_iso_slot *out, int n, float cx, float cy,
                        float z, float spacing) {
+    if (!out || n <= 0) return 0;
     for (int i = 0; i < n; i++) {
         /* centred: slot 0 is left-most, so shift back by half the span */
         out[i].x = cx + (float)(i - (n - 1) / 2.0f) * spacing;
@@ -104,6 +115,7 @@ int cui_iso_layout_row(cui_iso_slot *out, int n, float cx, float cy,
 
 int cui_iso_layout_ring(cui_iso_slot *out, int n, float cx, float cy,
                         float z, float radius) {
+    if (!out || n <= 0) return 0;
     for (int i = 0; i < n; i++) {
         float a = (float)i / (float)n * 2.0f * CUI_PI;
         out[i].x = cx + cosf(a) * radius;
@@ -115,6 +127,12 @@ int cui_iso_layout_ring(cui_iso_slot *out, int n, float cx, float cy,
 
 int cui_iso_layout_grid(cui_iso_slot *out, int cols, int rows,
                         float cx, float cy, float z, float cell) {
+    /* A negative dimension would write no slots and still return a positive
+     * count, and a product past the cap cannot be counted at all. Both are
+     * refused before anything is written, so the caller never reads a slot
+     * that was never filled. */
+    if (!out || cols <= 0 || rows <= 0) return 0;
+    if (cols > CUI_ISO_MAX_GRID_CELLS / rows) return 0;
     for (int r = 0; r < rows; r++)
         for (int c = 0; c < cols; c++) {
             int i = r * cols + c;
@@ -237,7 +255,15 @@ void cui_iso_scene_reset(cui_iso_scene *s) {
 }
 
 void cui_iso_begin(cui_iso_scene *s, const cui_iso_camera *cam) {
-    if (!s || !cam) return;
+    if (!s) return;
+    if (!cam) {
+        /* A NULL camera invalidates the batch. Leaving the previous batch
+         * alive would draw the last frame's solids against the last frame's
+         * camera at the next cui_iso_end. */
+        s->count = 0;
+        s->begun = false;
+        return;
+    }
     s->cam = *cam;
     s->count = 0;
     s->begun = true;
@@ -307,6 +333,11 @@ void cui_iso_grid(cui_iso_scene *s, float cx, float cy, float z,
                   int cells, float cell, cui_color fill, cui_color line) {
     cui_iso_solid *o = cui_iso__push(s, CUI_ISO_SHADOW);
     if (!o) return;
+    /* The cell count rides in a float field and the draw pass reads it back
+     * as an int, so it is clamped before it is stored: a count past the cap
+     * does not survive the round trip, and the cast back would be undefined. */
+    if (cells < 0) cells = 0;
+    if (cells > CUI_ISO_MAX_GRID_DIV) cells = CUI_ISO_MAX_GRID_DIV;
     o->cx = cx; o->cy = cy; o->z = z;
     o->w = (float)cells;         /* reuse w as cell count */
     o->d = cell;                 /* reuse d as cell size */
@@ -323,9 +354,15 @@ void cui_iso_cylinder(cui_iso_scene *s, float cx, float cy, float z_bottom,
      * splitting it into `sides` vertical strips, each lit by its own normal. */
     cui_iso_solid *o = cui_iso__push(s, CUI_ISO_CYLINDER);
     if (!o) return;
+    /* The side count rides in a float field and the draw pass reads it back as
+     * an int, so it is clamped here rather than at draw time: an unbounded
+     * count does not survive the round trip, and the cast back is undefined.
+     * The clamp is the same 8..64 the draw pass applies. */
+    if (sides < 8) sides = 8;
+    if (sides > CUI_ISO_MAX_CYL_SIDES) sides = CUI_ISO_MAX_CYL_SIDES;
     o->cx = cx; o->cy = cy; o->z = z_bottom;
     o->radius = radius; o->height = height;
-    o->chamfer = (float)(sides > 2 ? sides : 2);   /* reuse chamfer as side count */
+    o->chamfer = (float)sides;   /* reuse chamfer as side count */
     o->top = top; o->side = side;
 }
 
@@ -405,13 +442,19 @@ void cui_iso_arc(cui_iso_scene *s, float x1, float y1, float z1,
 /* A ball-and-stick graph floating at a world point — the recurring neural-net
  * motif in the NVIDIA art, in ONE call instead of twenty sphere+link calls.
  * Places `nodes` balls deterministically in a small cloud (seeded, so it does
- * not jitter frame to frame), then joins each to `sticks` nearest neighbours.
+ * not jitter frame to frame), then joins each ball to its `sticks` nearest
+ * neighbours by distance.
  * `spread` is the cloud radius in world units, `ball` the ball radius. */
 void cui_iso_lattice(cui_iso_scene *s, float cx, float cy, float z,
                      int nodes, int sticks, float spread, float ball,
                      cui_color ball_color, cui_color stick_color, uint32_t seed) {
+    if (!s) return;
     if (nodes < 2) nodes = 2;
     if (nodes > 24) nodes = 24;
+    /* A node has at most nodes-1 neighbours, so more sticks than that asks
+     * for a neighbour that does not exist. */
+    if (sticks < 1) sticks = 1;
+    if (sticks > nodes - 1) sticks = nodes - 1;
     float px[24], py[24], pz[24];
     uint32_t st = seed * 2654435761u + 12345u;
     for (int i = 0; i < nodes; i++) {
@@ -425,13 +468,36 @@ void cui_iso_lattice(cui_iso_scene *s, float cx, float cy, float z,
     }
     for (int i = 0; i < nodes; i++)
         cui_iso_sphere(s, cx + px[i], cy + py[i], z + pz[i], ball, ball_color);
-    for (int i = 1; i < nodes; i++)
-        for (int k = 0; k < sticks && i + 1 + k < nodes; k++) {
-            int j = i + 1 + k;
+    /* Nearest neighbours by distance, not by array order: the old loop joined
+     * node i to the nodes that came after it, so node 0 stood alone and a
+     * two-node graph drew no edge at all. Each pair is drawn once -- the
+     * nearest-neighbour relation is symmetric, so both ends would otherwise
+     * add the same stick twice. */
+    bool linked[24][24];
+    memset(linked, 0, sizeof linked);
+    for (int i = 0; i < nodes; i++) {
+        bool taken[24];
+        memset(taken, 0, sizeof taken);
+        for (int k = 0; k < sticks; k++) {
+            int best = -1;
+            float bestd = 0.0f;
+            for (int j = 0; j < nodes; j++) {
+                if (j == i || taken[j]) continue;
+                float dx = px[j] - px[i], dy = py[j] - py[i], dz = pz[j] - pz[i];
+                float d = dx * dx + dy * dy + dz * dz;
+                if (best < 0 || d < bestd) { best = j; bestd = d; }
+            }
+            if (best < 0) break;
+            taken[best] = true;
+            int a = i < best ? i : best;
+            int b = i < best ? best : i;
+            if (linked[a][b]) continue;
+            linked[a][b] = true;
             cui_iso_link(s, cx + px[i], cy + py[i], z + pz[i],
-                         cx + px[j], cy + py[j], z + pz[j],
+                         cx + px[best], cy + py[best], z + pz[best],
                          ball * 0.35f, stick_color, -1.0f);
         }
+    }
 }
 
 /* A stack of `count` flat disks (the coin / database drum in the art). Each
@@ -439,17 +505,31 @@ void cui_iso_lattice(cui_iso_scene *s, float cx, float cy, float z,
 void cui_iso_disk_stack(cui_iso_scene *s, float cx, float cy, float z_bottom,
                         float radius, int count, float disk_h, float gap,
                         int sides, cui_color top, cui_color side) {
+    /* Nothing to draw and nowhere to draw it: a null scene, a scene that is not
+     * in a batch, a non-positive count or a full batch all mean the loop below
+     * must not run. The count is also capped at the room left in the batch, so
+     * a stack of a million disks stops after the disks that fit instead of
+     * making a million refused insertions. */
+    if (!s || !s->begun || count <= 0) return;
+    int room = CUI_ISO_MAX_SOLIDS - s->count;
+    if (room <= 0) return;
+    if (count > room) count = room;
     for (int i = 0; i < count; i++) {
         float zb = z_bottom + (float)i * (disk_h + gap);
         cui_iso_cylinder(s, cx, cy, zb, radius, disk_h, sides, top, side);
     }
 }
 
-/* A caption anchored at a world point. Depth-sorted like a solid so a label
- * sits behind whatever is in front of it. Pass a colour with alpha 0 to use the
- * scene's text colour. */
+/* A caption anchored at a world point. Captions are drawn in a final overlay
+ * pass after every solid, so a caption is never painted over. The string is
+ * kept by pointer and read when the frame is drawn: it must stay valid until
+ * cui_iso_end returns. Pass a colour with alpha 0 to use the scene's text
+ * colour. */
 void cui_iso_text(cui_iso_scene *s, float x, float y, float z,
                   const char *text, cui_color color) {
+    /* A null caption would take a slot in the batch and draw nothing, so it
+     * is refused here rather than counted as a solid. */
+    if (!text) return;
     cui_iso_solid *o = cui_iso__push(s, CUI_ISO_TEXT);
     if (!o) return;
     o->cx = x; o->cy = y; o->z = z;
@@ -471,7 +551,10 @@ void cui_iso_wedge(cui_iso_scene *s, float cx, float cy, float z_base,
     o->side = side;
 }
 
-void cui_iso_set_reduced_motion(cui_iso_scene *s, bool on) { s->reduced_motion = on; }
+void cui_iso_set_reduced_motion(cui_iso_scene *s, bool on) {
+    if (!s) return;
+    s->reduced_motion = on;
+}
 
 /* Place `count` solids evenly around a circle of `radius` at height z, the
  * hub-and-spoke layout in the control-surface art. For each ring position this
@@ -632,7 +715,7 @@ static void cui_iso__draw_cylinder(cui_ctx *ui, const cui_iso_camera *cam,
                           const cui_iso_light *light, const cui_iso_solid *o) {
     int sides = (int)o->chamfer;
     if (sides < 8) sides = 8;
-    if (sides > 64) sides = 64;
+    if (sides > CUI_ISO_MAX_CYL_SIDES) sides = CUI_ISO_MAX_CYL_SIDES;
     float zb = o->z, zt = o->z + o->height;
 
     cui_vec2 tb[65], bb[65];
@@ -675,12 +758,12 @@ static void cui_iso__draw_cylinder(cui_ctx *ui, const cui_iso_camera *cam,
         cui_draw_polygon(ui, q, 4, c);
     }
 
-    /* top cap */
-    cui_vec2 cap[66];
-    cui_vec2 centre = cui_iso_project(cam, o->cx, o->cy, zt);
-    cap[0] = centre;
-    for (int i = 0; i <= sides; i++) cap[i + 1] = tb[i];
-    cui_draw_polygon(ui, cap, sides + 2, o->top);
+    /* Top cap: the rim polygon itself. The centre is not part of the polygon:
+     * a fan with the centre as apex leaves the radial edges inside the cap,
+     * and every one of them is a seam where two triangles meet. */
+    cui_vec2 cap[CUI_ISO_MAX_CYL_SIDES];
+    for (int i = 0; i < sides; i++) cap[i] = tb[i];
+    cui_draw_polygon(ui, cap, sides, o->top);
 }
 
 /* A depth-sorted ball with a simple top-left highlight, so it reads as a sphere
@@ -709,7 +792,13 @@ static void cui_iso__draw_text(cui_ctx *ui, const cui_iso_camera *cam,
 }
 
 /* A triangular prism — pitched roof or ramp. The ridge runs along the x axis.
- * Two sloped roof faces (shaded by the light) plus two triangular gable ends. */
+ * Two sloped roof faces (shaded by the light) plus two triangular gable ends.
+ *
+ * Only the faces that point at the camera are drawn. The projection maps
+ * (1,1,1) in the rotated frame onto the view axis, so the viewer sits along
+ * v = (ca + sa, ca - sa, 1) in world space, and a face is visible when its
+ * outward normal has a positive dot with v. Drawing the far side as well put
+ * the back gable and the back roof over the near ones. */
 static void cui_iso__draw_wedge(cui_ctx *ui, const cui_iso_camera *cam,
                        const cui_iso_light *light, const cui_iso_solid *o) {
     float x0 = o->cx - o->w * 0.5f, x1 = o->cx + o->w * 0.5f;
@@ -724,18 +813,31 @@ static void cui_iso__draw_wedge(cui_ctx *ui, const cui_iso_camera *cam,
     cui_vec2 r0 = cui_iso_project(cam, x0, o->cy, zr);
     cui_vec2 r1 = cui_iso_project(cam, x1, o->cy, zr);
 
-    /* roof face toward -y (normal points forward/-y): shade by its normal */
-    cui_color roof_neg = cui_iso_shade(o->top, *light, 0.0f, -0.85f);
-    cui_draw_polygon(ui, (cui_vec2[]){ b00, b10, r1, r0 }, 4, roof_neg);
-    /* roof face toward +y */
-    cui_color roof_pos = cui_iso_shade(o->top, *light, 0.0f, 0.85f);
-    cui_draw_polygon(ui, (cui_vec2[]){ b01, b11, r1, r0 }, 4, roof_pos);
+    float ca, sa;
+    cui_iso_basis(cam, &ca, &sa);
+    float vx = ca + sa, vy = ca - sa;
+    float half_d = (y1 - y0) * 0.5f;   /* the ridge sits mid-depth */
+
+    /* roof face toward -y: normal (0, -height, half_d) */
+    if (-o->height * vy + half_d > 0.0f) {
+        cui_color roof_neg = cui_iso_shade(o->top, *light, 0.0f, -0.85f);
+        cui_draw_polygon(ui, (cui_vec2[]){ b00, b10, r1, r0 }, 4, roof_neg);
+    }
+    /* roof face toward +y: normal (0, +height, half_d) */
+    if (o->height * vy + half_d > 0.0f) {
+        cui_color roof_pos = cui_iso_shade(o->top, *light, 0.0f, 0.85f);
+        cui_draw_polygon(ui, (cui_vec2[]){ b01, b11, r1, r0 }, 4, roof_pos);
+    }
 
     /* gable ends (triangles). Shade the -x and +x faces by their normals. */
-    cui_color gable_neg = cui_iso_shade(o->side, *light, -1.0f, 0.0f);
-    cui_draw_polygon(ui, (cui_vec2[]){ b00, b01, r0 }, 3, gable_neg);
-    cui_color gable_pos = cui_iso_shade(o->side, *light, 1.0f, 0.0f);
-    cui_draw_polygon(ui, (cui_vec2[]){ b10, b11, r1 }, 3, gable_pos);
+    if (-vx > 0.0f) {
+        cui_color gable_neg = cui_iso_shade(o->side, *light, -1.0f, 0.0f);
+        cui_draw_polygon(ui, (cui_vec2[]){ b00, b01, r0 }, 3, gable_neg);
+    }
+    if (vx > 0.0f) {
+        cui_color gable_pos = cui_iso_shade(o->side, *light, 1.0f, 0.0f);
+        cui_draw_polygon(ui, (cui_vec2[]){ b10, b11, r1 }, 3, gable_pos);
+    }
 
     /* ridge highlight */
     cui_color ridge = o->top;
@@ -781,7 +883,10 @@ static void cui_iso__draw_link_label(cui_ctx *ui, const cui_iso_camera *cam,
     cui_vec2 m = { (a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f - o->radius * 3.0f - 8.0f };
     char val[32];
     val[0] = 0;
-    if (o->label_decimals >= 0)
+    /* A negative value means "label only": the caller has no number to show.
+     * Testing the decimals instead would print a number for a label that was
+     * asked to carry none. */
+    if (o->label_value >= 0.0f && o->label_decimals >= 0)
         snprintf(val, sizeof val, "%.*f", o->label_decimals, o->label_value);
     cui_draw_text(ui, text->font, text->size, m, o->label_color,
                   o->label, (int)strlen(o->label));
@@ -850,15 +955,29 @@ static float cui_iso__key(const cui_iso_camera *cam, const cui_iso_solid *o) {
 void cui_iso_end(cui_iso_scene *s, cui_ctx *ui) {
     if (!s || !ui || !s->begun) return;
 
-    /* Reduced motion: freeze every travelling pulse at rest. */
+    /* Reduced motion: freeze every travelling pulse at rest. Only a pulse
+     * that is actually travelling is frozen: a value outside 0..1 is how a
+     * caller says "no pulse", and rewriting it to 0.5 would switch the pulse
+     * on for a scene that asked for none. */
     if (s->reduced_motion)
         for (int i = 0; i < s->count; i++)
-            if (s->solids[i].pulse >= 0.0f) s->solids[i].pulse = 0.5f;
+            if (s->solids[i].pulse >= 0.0f && s->solids[i].pulse <= 1.0f)
+                s->solids[i].pulse = 0.5f;
 
     /* A diorama hosted in a panel must not paint outside it: when bounds are
      * set, every pass below is clipped to that rectangle until the pop at the
-     * end of this function. */
-    if (s->has_bounds) cui_push_clip(ui, s->bounds);
+     * end of this function. The checked push says whether the clip was taken:
+     * CUI's clip stack is finite, and a refused push would leave the scene
+     * unclipped (painting over the neighbouring widgets) while the pop at the
+     * end would take a clip that was never pushed. */
+    bool clipped = false;
+    if (s->has_bounds) {
+        clipped = cui_push_clip_checked(ui, s->bounds);
+        if (!clipped) {
+            s->begun = false;
+            return;
+        }
+    }
 
     /* The ground first: shadows and the grid are a floor, never occluders. */
     for (int i = 0; i < s->count; i++)
@@ -917,13 +1036,16 @@ void cui_iso_end(cui_iso_scene *s, cui_ctx *ui) {
             cui_iso__draw_link_label(ui, &s->cam, &s->text, o);
     }
 
-    if (s->has_bounds) cui_pop_clip(ui);
+    if (clipped) cui_pop_clip(ui);
 
     s->begun = false;
 }
 
 void cui_iso_depth_bias_last(cui_iso_scene *sc, float bias) {
-    if (sc && sc->count > 0) sc->solids[sc->count - 1].bias = bias;
+    /* Only inside a batch: after cui_iso_end the frame is painted, and a bias
+     * written then would change what cui_iso_pick reports without changing
+     * what is on screen. */
+    if (sc && sc->begun && sc->count > 0) sc->solids[sc->count - 1].bias = bias;
 }
 
 /* A tone t of the way from the ground toward the ink, opaque.
@@ -988,10 +1110,16 @@ static float iso__cross(cui_vec2 o, cui_vec2 a, cui_vec2 b)
     return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
 }
 
-/* Convex hull of n <= 16 points by Andrew monotone chain, CCW. Writes the hull
- * back into pts and returns its length (0 if fewer than 3 distinct points). */
+/* Convex hull of n points by Andrew monotone chain, CCW. Writes the hull back
+ * into pts and returns its length (0 if fewer than 3 distinct points).
+ *
+ * The scratch buffer has to hold every input point: a cylinder hulls 2 * 64 rim
+ * samples, so the buffer is sized for that, not for the old 8-point box. The
+ * monotone chain keeps the lower and the upper hull in one array while it
+ * builds them, so the buffer is twice the point count. */
 static int iso__hull(cui_vec2 *p, int n)
 {
+    if (n < 3 || n > CUI_ISO_MAX_HULL_PTS) return 0;
     for (int i = 1; i < n; i++) {
         cui_vec2 c = p[i];
         int j = i - 1;
@@ -1001,7 +1129,7 @@ static int iso__hull(cui_vec2 *p, int n)
         }
         p[j + 1] = c;
     }
-    cui_vec2 h[64];   /* must hold every input point */
+    cui_vec2 h[CUI_ISO_MAX_HULL_PTS * 2];   /* must hold every input point */
     int k = 0;
     for (int i = 0; i < n; i++) {
         while (k >= 2 && iso__cross(h[k - 2], h[k - 1], p[i]) <= 0.0f) k--;
@@ -1039,7 +1167,9 @@ static bool iso__in_hull(const cui_vec2 *pts, int n, float sx, float sy)
 bool cui_iso_hit_box(const cui_iso_camera *cam, float sx, float sy,
                     float cx, float cy, float z_top, float w, float d)
 {
-    if (!cam) return false;
+    /* A zero scale projects every world point onto the same screen point, so
+     * the hull degenerates to a point and every click would land on it. */
+    if (!cam || cam->scale == 0.0f) return false;
     float x0 = cx - w * 0.5f, x1 = cx + w * 0.5f;
     float y0 = cy - d * 0.5f, y1 = cy + d * 0.5f;
     cui_vec2 q[4] = {
@@ -1088,31 +1218,48 @@ bool cui_iso_hit_solid(const cui_iso_camera *cam, float sx, float sy,
 /* A sphere is a screen-space circle at its projected centre. */
 bool cui_iso_hit_sphere(const cui_iso_camera *cam, float sx, float sy,
                         float x, float y, float z, float radius) {
+    if (!cam || cam->scale == 0.0f) return false;
     cui_vec2 c = cui_iso_project(cam, x, y, z);
     float r = radius * cam->scale;
     float dx = sx - c.x, dy = sy - c.y;
     return dx * dx + dy * dy <= r * r;
 }
 
+/* The rim of a cylinder, sampled the way the renderer builds it: `sides`
+ * vertices at i/sides * 2pi, the top rim and the bottom rim. The hit test and
+ * the renderer have to agree on those vertices -- sampling the rim any other
+ * way makes the clickable area differ from the painted shape (an 8-sided
+ * cylinder at 315 degrees loses a visible vertex). */
+static int iso__cyl_rim(const cui_iso_camera *cam, float cx, float cy,
+                        float z_bottom, float radius, float height,
+                        int sides, cui_vec2 *q)
+{
+    if (sides < 8) sides = 8;
+    if (sides > CUI_ISO_MAX_CYL_SIDES) sides = CUI_ISO_MAX_CYL_SIDES;
+    for (int i = 0; i < sides; i++) {
+        float a = (float)i / (float)sides * 2.0f * CUI_PI;
+        float ux = cosf(a) * radius, uy = sinf(a) * radius;
+        q[i] = cui_iso_project(cam, cx + ux, cy + uy, z_bottom + height);
+        q[i + sides] = cui_iso_project(cam, cx + ux, cy + uy, z_bottom);
+    }
+    return iso__hull(q, 2 * sides);
+}
+
 /* A cylinder reads as its projected top ellipse plus the body below it, so a
- * click lands if it is inside the top ellipse or in the column beneath it. */
+ * click lands if it is inside the top ellipse or in the column beneath it.
+ *
+ * The silhouette is the convex hull of the two rims, sampled with the same
+ * vertex count the renderer uses. This form takes no side count, so it tests
+ * the roundest cylinder the renderer can draw (64 sides); a coarser cylinder
+ * has a slightly smaller footprint, and picking one exactly needs
+ * cui_iso_pick, which reads the side count off the solid. */
 bool cui_iso_hit_cylinder(const cui_iso_camera *cam, float sx, float sy,
                           float cx, float cy, float z_bottom, float radius,
                           float height) {
     if (!cam || cam->scale == 0.0f || radius <= 0.0f) return false;
-    /* The cylinder paints as its two rim ellipses plus the barrel between them,
-     * so a click lands anywhere inside the convex hull of the rims. Sample each
-     * rim, hull the union, and test the point (same method as cui_iso_hit_solid;
-     * the top-only ellipse test used to leave most of the barrel dead). */
-    enum { R = 20 };
-    cui_vec2 q[2 * R];
-    for (int i = 0; i < R; i++) {
-        float a = (float)i / (float)R * 2.0f * CUI_PI;
-        float ux = cosf(a) * radius, uy = sinf(a) * radius;
-        q[i]         = cui_iso_project(cam, cx + ux, cy + uy, z_bottom + height);
-        q[i + R]     = cui_iso_project(cam, cx + ux, cy + uy, z_bottom);
-    }
-    int n = iso__hull(q, 2 * R);
+    cui_vec2 q[2 * CUI_ISO_MAX_CYL_SIDES];
+    int n = iso__cyl_rim(cam, cx, cy, z_bottom, radius, height,
+                         CUI_ISO_MAX_CYL_SIDES, q);
     return n >= 3 && iso__in_hull(q, n, sx, sy);
 }
 
@@ -1124,6 +1271,28 @@ bool cui_iso_hit_cylinder(const cui_iso_camera *cam, float sx, float sy,
  * without threading the camera through. Boxes and cylinders are tested by
  * volume, spheres by their screen circle.
  */
+/* A box paints a prism from its lid down to z_top - height with the
+ * chamfered footprint the renderer uses, so a click has to land on that same
+ * chamfered silhouette: the un-chamfered rectangle is bigger than the painted
+ * shape at the corners, and picking answers on pixels nothing was drawn on. */
+static bool iso__hit_box_volume(const cui_iso_camera *cam, float sx, float sy,
+                                const cui_iso_solid *o) {
+    if (!cam || cam->scale == 0.0f) return false;
+    float x0 = o->cx - o->w * 0.5f, x1 = o->cx + o->w * 0.5f;
+    float y0 = o->cy - o->d * 0.5f, y1 = o->cy + o->d * 0.5f;
+    float c = o->chamfer;
+    float wx[8] = { x0 + c, x1 - c, x1,     x1,     x1 - c, x0 + c, x0,     x0     };
+    float wy[8] = { y0,     y0,     y0 + c, y1 - c, y1,     y1,     y1 - c, y0 + c };
+    float zt = o->z, zb = o->z - o->height;
+    cui_vec2 p[16];
+    for (int i = 0; i < 8; i++) {
+        p[i] = cui_iso_project(cam, wx[i], wy[i], zt);
+        p[i + 8] = cui_iso_project(cam, wx[i], wy[i], zb);
+    }
+    int n = iso__hull(p, 16);
+    return n >= 3 && iso__in_hull(p, n, sx, sy);
+}
+
 int cui_iso_pick(cui_iso_scene *s, float sx, float sy) {
     if (!s) return -1;
     /* cui_iso_end clips drawing to the bounds, so picking must agree with what
@@ -1141,13 +1310,15 @@ int cui_iso_pick(cui_iso_scene *s, float sx, float sy) {
         bool hit = false;
         switch (o->kind) {
             case CUI_ISO_BOX:
-                hit = cui_iso_hit_solid(&s->cam, sx, sy, o->cx, o->cy, o->z,
-                                       o->height, o->w, o->d);
+                hit = iso__hit_box_volume(&s->cam, sx, sy, o);
                 break;
-            case CUI_ISO_CYLINDER:
-                hit = cui_iso_hit_cylinder(&s->cam, sx, sy, o->cx, o->cy, o->z,
-                                           o->radius, o->height);
+            case CUI_ISO_CYLINDER: {
+                cui_vec2 q[2 * CUI_ISO_MAX_CYL_SIDES];
+                int n = iso__cyl_rim(&s->cam, o->cx, o->cy, o->z, o->radius,
+                                     o->height, (int)o->chamfer, q);
+                hit = n >= 3 && iso__in_hull(q, n, sx, sy);
                 break;
+            }
             case CUI_ISO_SPHERE:
                 hit = cui_iso_hit_sphere(&s->cam, sx, sy, o->cx, o->cy, o->z,
                                         o->radius);

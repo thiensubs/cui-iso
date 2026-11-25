@@ -167,7 +167,14 @@ static void paint(cui_ctx *ui, cui_rect rect, void *user) {
         float lift = d->lift[i];
         float sc = (PODS[i].w * 0.62f + lift * 8.0f) * cam->scale;
         float sr = (PODS[i].d * 0.40f + lift * 5.0f) * cam->scale;
-        uint8_t sa = (uint8_t)(92 - lift * 22);
+        /* The shadow fades as the pod lifts. LIFT_MAX is 9, where 92 - lift*22
+         * goes negative, and a negative float cast to uint8_t is undefined:
+         * it can wrap to a bright alpha instead of fading out. Clamp in float
+         * first. */
+        float sa_f = 92.0f - lift * 22.0f;
+        if (sa_f < 0.0f) sa_f = 0.0f;
+        if (sa_f > 255.0f) sa_f = 255.0f;
+        uint8_t sa = (uint8_t)sa_f;
         cui_iso_shadow(d->scene, PODS[i].x, PODS[i].y, -24.0f, sc, sr,
                        rgba(0x000000, sa));
     }

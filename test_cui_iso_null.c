@@ -9,6 +9,60 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* The refused-insertion frame. `with_refused` adds one call that cannot fit in
+ * the batch; the two frames must come out byte for byte equal.
+ *
+ * The batch is filled with invisible shadows and the last solid is a caption:
+ * a label written onto the wrong solid would change the words on screen, which
+ * is the whole point of the check. */
+#define NULL_W 200
+#define NULL_H 160
+
+static unsigned char *render_refused(int with_refused) {
+    cui_sw_renderer *sw = cui_sw_create();
+    cui_ctx *ui = cui_create(&(cui_ctx_desc){ .renderer = cui_sw_iface(sw),
+                                             .theme = CUI_THEME_DARK });
+    cui_set_viewport(ui, NULL_W, NULL_H, 1.0f);
+    cui_iso_scene *sc = cui_iso_scene_create();
+    cui_iso_camera cam = { 0.55f, NULL_W * 0.5f, NULL_H * 0.55f, 1.0f };
+
+    cui_begin_frame(ui, 1.0f / 60.0f);
+    cui_draw_rect(ui, (cui_rect){ 0, 0, NULL_W, NULL_H }, CUI_CORNERS(0),
+                  CUI_RGB(0x000000));
+    cui_iso_begin(sc, &cam);
+
+    for (int i = 0; i < CUI_ISO_MAX_SOLIDS - 1; i++)
+        cui_iso_shadow_named(sc, .cx = 0.0f, .cy = 0.0f, .z = 0.0f,
+                             .rx = 1.0f, .ry = 1.0f,
+                             .color = CUI_RGBA(0x00000000));
+    cui_iso_text_named(sc, .x = 0.0f, .y = 0.0f, .z = 0.0f, .text = "keep",
+                       .color = CUI_RGB(0xffffff));
+
+    if (with_refused)
+        cui_iso_link_labeled_named(sc, .x1 = -10.0f, .y1 = 0.0f, .z1 = 0.0f,
+                                   .x2 = 10.0f, .y2 = 0.0f, .z2 = 0.0f,
+                                   .thickness = 2.0f, .color = CUI_RGB(0xffffff),
+                                   .pulse = 0.5f, .label = "leak", .value = 1,
+                                   .decimals = 0);
+    if (cui_iso_scene_count(sc) != CUI_ISO_MAX_SOLIDS)
+        fprintf(stderr, "FAIL inert: batch holds %d solids, expected %d\n",
+                cui_iso_scene_count(sc), CUI_ISO_MAX_SOLIDS);
+
+    cui_iso_end(sc, ui);
+    cui_end_frame(ui);
+
+    const cui_draw_data *dd = cui_get_draw_data(ui);
+    size_t bytes = (size_t)dd->width_px * dd->height_px * 4;
+    unsigned char *px = malloc(bytes);
+    cui_sw_render(sw, dd, px, dd->width_px, dd->height_px, dd->width_px * 4,
+                  CUI_SW_RGBA);
+
+    cui_iso_scene_destroy(sc);
+    cui_destroy(ui);
+    cui_sw_destroy(sw);
+    return px;
+}
+
 int main(void) {
     cui_iso_scene *none = NULL;
     cui_color c = CUI_RGB(0x5c6169);
@@ -56,6 +110,8 @@ int main(void) {
                         .roof = c, .side = c);
     cui_iso_set_text_style(none, (cui_iso_text_style){ 0 });
     cui_iso_set_light(none, l);
+    cui_iso_set_reduced_motion(none, true);
+    cui_iso_set_bounds(none, (cui_rect){ 0, 0, 10, 10 });
     cui_iso_scene_reset(none);
     cui_iso_scene_destroy(none);
     printf("NULL scene handled\n");
@@ -66,7 +122,7 @@ int main(void) {
     cui_iso_box_named(sc,
                       .cx = 0, .cy = 0, .z_top = 0, .w = 1, .d = 1, .height = 1,
                       .chamfer = 1, .top = c, .side = c);
-    printf("NULL camera safe: count %d\\n", cui_iso_scene_count(sc));
+    printf("NULL camera safe: count %d\n", cui_iso_scene_count(sc));
 
     /* a full scene must not relabel an older solid
      * (label guard row 5). Fill past the cap, then add a labelled link.
@@ -82,11 +138,34 @@ int main(void) {
                                .thickness = 2, .color = c, .pulse = 0.5f, .label = "leak",
                                .value = 1, .decimals = 0);
     if (cui_iso_scene_count(sc) != CUI_ISO_MAX_SOLIDS) {
-        fprintf(stderr, "FAIL label guard: count %d\\n", cui_iso_scene_count(sc));
+        fprintf(stderr, "FAIL label guard: count %d\n", cui_iso_scene_count(sc));
         return 1;
     }
-    printf("ok   label guard: full scene unchanged, count %d\\n",
+    printf("ok   label guard: full scene unchanged, count %d\n",
            cui_iso_scene_count(sc));
     cui_iso_scene_destroy(sc);
+
+    /* A refused insertion must leave the batch exactly as it was. The label
+     * used to be written onto whatever solid happened to be last, so a link
+     * that did not fit relabelled a caption that was already in the batch. */
+    unsigned char *refused = render_refused(1);
+    unsigned char *plain = render_refused(0);
+    if (!refused || !plain) {
+        fprintf(stderr, "FAIL inert: render returned nothing\n");
+        free(refused);
+        free(plain);
+        return 1;
+    }
+    size_t bytes = (size_t)NULL_W * NULL_H * 4;
+    size_t diff = 0;
+    for (size_t i = 0; i < bytes; i++)
+        if (refused[i] != plain[i]) diff++;
+    free(refused);
+    free(plain);
+    if (diff != 0) {
+        fprintf(stderr, "FAIL inert: a refused insertion changed %zu bytes\n", diff);
+        return 1;
+    }
+    printf("ok   inert: a refused insertion changed no pixels\n");
     return 0;
 }

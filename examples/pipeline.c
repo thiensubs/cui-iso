@@ -13,9 +13,9 @@
  * Drag to orbit, click a stage to select it. Everything is drawn with plain
  * cui_draw_* calls through cui-iso; no WebGL, no assets.
  */
-#include "cui_iso.h"
-#include "cui_iso_opts.h"
 #include <cui/cui_app.h>
+#include <cui/cui_iso.h>
+#include <cui/cui_iso_opts.h>
 
 #include <math.h>
 #include <stdio.h>
@@ -220,9 +220,13 @@ int main(void) {
     ts.color = CUI_RGB(0xe8eaee);
     ts.value_color = CUI_RGB(0x8b9096);
     cui_iso_set_text_style(a.scene, ts);
+    /* The labels below are fixed near-white and grey, so the window asks for
+     * the dark theme: on the light theme those colours have almost no
+     * contrast against the background. */
     int rc = cui_app_run(&(cui_app_desc){ .title = "CI pipeline",
                                           .width = 980, .height = 420,
-                                          .continuous = true },
+                                          .continuous = true,
+                                          .theme = CUI_THEME_DARK },
                          frame, &a);
     cui_iso_scene_destroy(a.scene);
     return rc;

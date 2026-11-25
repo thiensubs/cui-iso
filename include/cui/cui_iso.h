@@ -9,7 +9,8 @@
  *   - a projection from world space (x right, y forward, z up) to CUI screen
  *     space (cui_iso_project / cui_iso_depth),
  *   - a depth-sorted list of opaque and glassy solids drawn back to front, so
- *     you never hand-order a scene (cui_iso_begin / cui_iso_box / cui_iso_end),
+ *     you never hand-order a scene (cui_iso_begin / cui_iso_box_named /
+ *     cui_iso_end),
  *   - per-face lighting against one fixed world light, so boxes read as solids
  *     and not as flat rhombi (cui_iso_light).
  *
@@ -25,6 +26,13 @@
  *
  * Screen-space output is a cui_vec2 in the coordinate space CUI's draw calls
  * expect, so you can mix projected points with cui_draw_text and friends.
+ *
+ * The solids themselves are declared in <cui/cui_iso_opts.h>, one options
+ * struct and one named-field call per solid:
+ *
+ *   #include <cui/cui_iso_opts.h>
+ *   cui_iso_box_named(sc, .cx = 0, .cy = 0, .z_top = 30, .w = 70, .d = 70,
+ *                      .height = 60, .chamfer = 10, .top = a, .side = b);
  *
  * Not included on purpose: texture mapping, perspective, mesh loading, and any
  * hidden-surface removal beyond painter's algorithm over whole solids. If you
@@ -104,19 +112,23 @@ typedef struct cui_iso_slot {
 /* Raise a slot by `height` -- "put this on top of that." */
 CUI_API cui_iso_slot cui_iso_on(cui_iso_slot s, float height);
 
-/* A row of `n` slots left-to-right, centred on (cx, cy) at height z, `spacing`
- * apart. Slot 0 is the left-most. Returns how many it filled (n). */
+/* The largest grid a layout will fill. The slot count has to fit in an int and
+ * in the caller's buffer; a bigger grid is refused and returns 0. */
+#define CUI_ISO_MAX_GRID_CELLS 4096
 
-/* A ring of `n` slots around (cx, cy), first one at the front. */
-
-/* A grid of slots: `cols` across by `rows` deep, `cell` world units each. */
-
-/* The same three layouts, taking their names instead of a positional run.
+/* The three layouts, each taking its names instead of a positional run.
  * A layout is described by where it starts and how it steps, so the opts
  * structs say that: start and spacing, not five interchangeable floats.
- * The positional forms above stay, and remain correct; these exist because
- * cui_iso_layout_row(out, 6, 0, 0, 0, 30) cannot be read at the call site and
- * cui_iso_layout_row_ex(out, 6, &(cui_iso_layout_row_opts){ .spacing = 30 }) can. */
+ *
+ *   cui_iso_layout_row_ex(out, 6, &(cui_iso_layout_row_opts){ .spacing = 30 });
+ *
+ * A row of `n` slots left-to-right, centred on (x, y) at height z, `spacing`
+ * apart; slot 0 is the left-most.
+ * A ring of `n` slots around (x, y), the first one at the front.
+ * A grid of slots, `cols` across by `rows` deep, `cell` world units each.
+ * Each returns how many slots it filled. A layout that cannot be filled -- a
+ * non-positive count, a NULL `out`, or a grid with more than
+ * CUI_ISO_MAX_GRID_CELLS cells -- returns 0 and writes nothing. */
 typedef struct cui_iso_layout_row_opts {
     int _;
     float x, y, z;   /* centre of the row */
@@ -148,8 +160,12 @@ CUI_API int cui_iso_layout_grid_ex(cui_iso_slot *out, int cols, int rows,
  * cui_iso_end; nothing is drawn until cui_iso_end, which is what gives you
  * correct overlap without hand-sorting.
  *
- * Opaque solids (cui_iso_box) are sorted by depth and drawn first-to-last.
- * Glass solids (cui_iso_glass) are drawn after all opaque ones at the same
+ * The solids are declared in <cui/cui_iso_opts.h>, one named-field call each:
+ * box, slab, glass, cylinder, sphere, shadow, grid, link, link_labeled, arc,
+ * wedge, text, lattice and disk_stack.
+ *
+ * Opaque solids (the box) are sorted by depth and drawn first-to-last.
+ * Glass solids (the vitrine) are drawn after all opaque ones at the same
  * footprint, on top, because they are translucent overlays (a vitrine over a
  * prop). Pulses/labels you draw yourself, after cui_iso_end.
  *
@@ -180,50 +196,15 @@ CUI_API void cui_iso_set_bounds(cui_iso_scene *s, cui_rect r);
  * to light a scene from the other side, or lower ceil to flatten the shading. */
 CUI_API void cui_iso_set_light(cui_iso_scene *s, cui_iso_light light);
 
-/* Start a frame's solid batch against this camera. */
+/* Start a frame's solid batch against this camera. A NULL camera invalidates
+ * the batch instead of leaving the previous one alive: the next cui_iso_end
+ * draws nothing rather than the last frame's solids. */
 CUI_API void cui_iso_begin(cui_iso_scene *s, const cui_iso_camera *cam);
-
-/* A chamfered box: a rectangular prism with its vertical corners cut by
- * `chamfer` world units, which is what makes the silhouette read as 3D rather
- * than a flat hexagon. (cx, cy) is the footprint centre; the box sits with its
- * TOP at z = z_top and extends down `height`. `top` is the top-face colour;
- * `side` is the base side colour, shaded per face by the scene's light. */
-
-/* A thin flat slab, convenience for a box of small height (a platform). */
-
-/* A translucent glass case over a footprint, with a neon frame on its top
- * edges. Drawn after opaque solids. `tint` colours the glass panels; the frame
- * uses `tint` at higher alpha. */
-
-/* A vertical cylinder standing on z_bottom: pillars, tanks, columns, pipes.
- * `sides` is the tessellation (clamp 8..64; 24 looks round at diorama scale).
- * The side is lit strip-by-strip like a box, so it shades consistently with the
- * boxes around it. */
-
-/* A depth-sorted ball at a world point: molecule atoms, node markers,
- * particles. Drawn with a top-left highlight so it reads as a sphere. */
-
-/* A connection between two world points -- the "sense flow" primitive: conduits,
- * pipes, edges in a topology or pipeline. Drawn as a soft glow + body + bright
- * core. `pulse` in 0..1 places a travelling dot at that fraction along the link
- * (pass <0 or >1 for no pulse), so a scene can animate flow by moving one value
- * each frame. Sorted at the link's midpoint, so it sits between the solids it
- * joins. */
 
 /* Set how every label in the scene is drawn (font, size, colour). Call once
  * after creating the scene; labels added later pick it up. Zero-initialise a
  * cui_iso_text_style for the defaults (body font, 12 px, white). */
 CUI_API void cui_iso_set_text_style(cui_iso_scene *s, cui_iso_text_style style);
-
-/* cui_iso_link plus a label and a live number floating at the midpoint -- the
- * "LLM --3.2 tok/s--> Optimize" look from pipeline art. `decimals` is digits
- * after the point for `value` (pass 0 for "12", 1 for "3.2"); a negative value
- * draws the label with no number. The label uses the scene's text style. */
-
-/* A curved conduit that bulges above the straight path -- the ring conduits and
- * curved flow arrows in pipeline art. `bulge` is how far (world units) the
- * midpoint lifts toward the camera and up; 0 collapses to a straight link.
- * Draws with the same glow/body/core layering as cui_iso_link. */
 
 /* A link from slot `a` to slot `b`, trimmed in by `gap` world units at each end
  * so it meets the edge of whatever sits on the slot instead of its centre. This
@@ -233,22 +214,14 @@ CUI_API void cui_iso_link_between(cui_iso_scene *s, cui_iso_slot a, cui_iso_slot
                                   float gap, float thickness, cui_color color,
                                   float pulse);
 
-/* A ball-and-stick graph at a world point -- the recurring neural-net motif --
- * in ONE call instead of many sphere+link calls. Places `nodes` balls
- * deterministically in a cloud of radius `spread` (seeded, so it does not
- * jitter between frames) and joins each to `sticks` neighbours. */
-
-/* A stack of `count` flat disks -- the coin / database drum motif. Each disk is
- * a short wide cylinder of height `disk_h`, separated by `gap`. */
-
-/* A caption anchored at a world point, centred on it and depth-sorted like a
- * solid. Pass a colour with alpha 0 to use the scene's text colour. */
+/* A caption anchored at a world point, centred on it. Captions are drawn in a
+ * final overlay pass after every solid, so a solid never paints over a
+ * caption. Pass a colour with alpha 0 to use the scene's text colour.
+ *
+ * The string is not copied: keep it valid until cui_iso_end returns (or until
+ * the batch is discarded), or the caption reads freed memory. */
 CUI_API void cui_iso_text(cui_iso_scene *s, float x, float y, float z,
                           const char *text, cui_color color);
-
-/* A triangular prism -- a pitched roof or a ramp. The ridge runs along the x
- * axis; the footprint is w (ridge length) by d, and the ridge rises `height`
- * above z_base. Both roof faces and both gable ends are shaded by the light. */
 
 /* CUI's reduced-motion path: when on, travelling pulses freeze at rest instead
  * of animating, so a motion-sensitive user still gets a complete scene. Call
@@ -266,16 +239,6 @@ CUI_API void cui_iso_ring(cui_iso_scene *s, float cx, float cy, float z, float r
                                         float angle_frac, void *user),
                           void *user);
 
-/* A tiled ground plane under the whole scene -- the floor most dioramas sit on.
- * Drawn first, before all solids. (cx, cy) is the centre at height z; `cells`
- * divisions of `cell` world units each, so the plane spans cells*cell wide.
- * `line` colours the grid lines; a zero-alpha `fill` leaves the floor
- * transparent so your own background shows through. */
-
-/* A flat ground ellipse (a contact shadow or ambient glow), drawn before all
- * solids. (cx, cy, z) is the world centre; rx/ry are screen-space radii already
- * scaled if you want, or pass world radii and let the camera scale them. */
-
 /* Draw the whole batch back to front into a CUI context. Call this inside your
  * paint function. */
 CUI_API void cui_iso_end(cui_iso_scene *s, cui_ctx *ui);
@@ -283,14 +246,19 @@ CUI_API void cui_iso_end(cui_iso_scene *s, cui_ctx *ui);
 /* Nudge the solid added last toward (+) or away from (-) the camera when the
  * scene is sorted for drawing. The sort is by depth, which a diorama gets right;
  * a bias is for the tie the geometry cannot decide, such as a conduit that
- * should read in front of the platform it grazes. */
+ * should read in front of the platform it grazes.
+ *
+ * Only inside a batch: after cui_iso_end the frame is already painted, and a
+ * bias written then would change what cui_iso_pick reports without changing
+ * what is on screen. */
 CUI_API void cui_iso_depth_bias_last(cui_iso_scene *sc, float bias);
 
 /* ---- picking ------------------------------------------------------------- */
 
 /* Click picking. Each returns true if the screen point (sx, sy) lands on that
- * solid: a box anywhere on its projected prism, a sphere by its screen circle, a
- * cylinder by its top ellipse plus the column beneath it. */
+ * solid. A box is tested on its projected LID; the body below the lid needs
+ * cui_iso_hit_solid. A sphere is tested by its screen circle, a cylinder by
+ * its top ellipse plus the column beneath it. */
 CUI_API bool cui_iso_hit_box(const cui_iso_camera *cam, float sx, float sy,
                              float cx, float cy, float z_top, float w, float d);
 /* The whole box volume, lid down to z_top - height: what cui_iso_pick uses, so a
@@ -305,10 +273,11 @@ CUI_API bool cui_iso_hit_cylinder(const cui_iso_camera *cam, float sx, float sy,
                                   float height);
 
 /* Pick the front-most solid under a screen point. Returns its index in the
- * scene's draw order, or -1 when nothing is hit. Boxes and cylinders are tested
- * by volume, spheres by their screen circle. Safe to call after cui_iso_end:
- * the scene keeps the camera it was drawn with, so a click handler can ask what
- * was just drawn there. */
+ * order the solids were submitted, or -1 when nothing is hit -- so the answer
+ * maps straight back to the call that added the solid. Boxes and cylinders are
+ * tested by volume, spheres by their screen circle. Safe to call after
+ * cui_iso_end: the scene keeps the camera it was drawn with, so a click handler
+ * can ask what was just drawn there. */
 CUI_API int cui_iso_pick(cui_iso_scene *s, float sx, float sy);
 
 /* ---- palette -------------------------------------------------------------
@@ -321,6 +290,7 @@ CUI_API int cui_iso_pick(cui_iso_scene *s, float sx, float sy);
  *
  * Most callers should use this instead of raw CUI_RGB(0x..) literals:
  *
+ *   #include <cui/cui_iso_opts.h>
  *   cui_iso_palette pal = cui_iso_palette_default(ui);
  *   cui_iso_box_named(sc, .w = 70, .d = 70, .height = 60, .chamfer = 10,
  *                      .top = pal.block, .side = pal.block_side);

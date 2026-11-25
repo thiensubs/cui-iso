@@ -33,7 +33,9 @@ hub platform, service pods, glass vitrines and contact shadows. Nothing in
 
 ## The API at a glance
 
-Everything lives in `cui_iso.h`. Two structs do the setup:
+Everything lives in two public headers: `<cui/cui_iso.h>` for the scene, the
+camera and the helpers, and `<cui/cui_iso_opts.h>` for the solids (one options
+struct and one named-field call each). Two structs do the setup:
 
 - `cui_iso_camera` — `az` (orbit angle in radians), `cx`/`cy` (the screen
   point that world origin maps to), `scale` (pixels per world unit).
@@ -50,30 +52,36 @@ For a whole scene you skip the sorting and let the scene do it. Fill a
 batch between `cui_iso_begin` and `cui_iso_end`; nothing is drawn until
 `cui_iso_end`, which is what gives you correct overlap:
 
-- `cui_iso_grid` — a tiled ground plane, drawn first (the floor most
+Every solid below has two call forms: `cui_iso_<name>_named(scene, .field =
+...)` and `cui_iso_<name>_ex(scene, &opts)`. The list names the named-field
+form.
+
+- `cui_iso_grid_named` — a tiled ground plane, drawn first (the floor most
   dioramas sit on).
-- `cui_iso_shadow` — a flat ground ellipse, drawn first (contact shadow or
-  ambient glow).
-- `cui_iso_slab` — a thin platform.
-- `cui_iso_box` — a chamfered box, top face flat-coloured, sides shaded by
-  the light.
-- `cui_iso_cylinder` — a vertical cylinder (tanks, pillars, pipes), shaded
-  strip-by-strip so it matches the boxes.
-- `cui_iso_sphere` — a depth-sorted ball (molecule atoms, node markers,
+- `cui_iso_shadow_named` — a flat ground ellipse, drawn first (contact shadow
+  or ambient glow).
+- `cui_iso_slab_named` — a thin platform.
+- `cui_iso_box_named` — a chamfered box, top face flat-coloured, sides shaded
+  by the light.
+- `cui_iso_cylinder_named` — a vertical cylinder (tanks, pillars, pipes),
+  shaded strip-by-strip so it matches the boxes.
+- `cui_iso_sphere_named` — a depth-sorted ball (molecule atoms, node markers,
   particles) with a top-left highlight.
-- `cui_iso_disk_stack` — a stack of flat disks (the database-drum motif).
-- `cui_iso_wedge` — a triangular prism: a pitched roof or a ramp.
-- `cui_iso_link` — a connection between two world points (conduits, pipes,
-  edges), drawn as a glow + body + core, with an optional travelling pulse
-  dot you animate by moving one 0..1 value.
-- `cui_iso_arc` — a curved conduit that bulges above the straight path (the
-  ring conduits and curved flow arrows).
-- `cui_iso_lattice` — a ball-and-stick graph in one call: the recurring
+- `cui_iso_disk_stack_named` — a stack of flat disks (the database-drum
+  motif).
+- `cui_iso_wedge_named` — a triangular prism: a pitched roof or a ramp.
+- `cui_iso_link_named` — a connection between two world points (conduits,
+  pipes, edges), drawn as a glow + body + core, with an optional travelling
+  pulse dot you animate by moving one 0..1 value.
+- `cui_iso_arc_named` — a curved conduit that bulges above the straight path
+  (the ring conduits and curved flow arrows).
+- `cui_iso_lattice_named` — a ball-and-stick graph in one call: the recurring
   neural-net motif, without hand-placing twenty spheres and links.
-- `cui_iso_glass` — a translucent vitrine with a neon frame, drawn on top
-  of the opaque solids.
-- `cui_iso_text` — a caption anchored at a world point, depth-sorted like a
-  solid.
+- `cui_iso_glass_named` — a translucent vitrine with a neon frame, drawn on
+  top of the opaque solids.
+- `cui_iso_text_named` — a caption anchored at a world point. Captions are
+  drawn in a final overlay pass, after every solid, so a caption is never
+  painted over.
 - `cui_iso_end` — sorts and draws the batch into a `cui_ctx *`.
 
 Opaque solids — boxes, cylinders, wedges, spheres, links, arcs — share one
@@ -89,7 +97,10 @@ Two layout helpers save you the trig:
 For clicking: `cui_iso_hit_box`, `cui_iso_hit_sphere` and
 `cui_iso_hit_cylinder` each test one solid, and `cui_iso_pick` returns the
 index of the front-most solid under a screen point, so a click selects
-whatever the user actually pointed at.
+whatever the user actually pointed at. The index is the order the solid was
+submitted in, so it maps straight back to the call that added it. Picking
+uses the same silhouette the renderer draws: a box is tested on its chamfered
+footprint, and a cylinder on the rim vertices of its own side count.
 
 ### Motion and accessibility
 
@@ -102,13 +113,17 @@ animating, so a motion-sensitive user still gets a complete scene.
 
 The pipeline-style scenes in NVIDIA's blog art — `LLM → Optimize →
 Deploy`, with a number on each arrow that updates while flow animates —
-need text on the scene. `cui_iso_link_labeled` is a link that carries a
-label and a live number floating at its midpoint:
+need text on the scene. `cui_iso_link_labeled_named` (or `_ex`) is a link
+that carries a label and a live number floating at its midpoint:
 
 ```c
 /* a link that reads "LLM --tok/s 3.2--> Optimize", pulse travelling */
-cui_iso_link_labeled(&scene, llm.x, llm.y, 40, opt.x, opt.y, 40,
-                     2.0f, CUI_RGB(0x34d18c), pulse, "tok/s", 3.2f, 1);
+cui_iso_link_labeled_named(scene,
+                            .x1 = llm.x, .y1 = llm.y, .z1 = 40,
+                            .x2 = opt.x, .y2 = opt.y, .z2 = 40,
+                            .thickness = 2.0f, .color = CUI_RGB(0x34d18c),
+                            .pulse = pulse, .label = "tok/s",
+                            .value = 3.2f, .decimals = 1);
 ```
 
 Move `pulse` (and the value) each frame and the dot travels the link while
@@ -240,5 +255,23 @@ cmake --install build --prefix /usr/local
 
 That puts `libcui_iso.a` in `lib/` and the public headers in `include/cui/`.
 Include `<cui/cui_iso.h>` for the scene, camera and helpers, and
-`<cui/cui_iso_opts.h>` for the named-field solids. If CUI is not beside this
-directory, configure with `-DCUI_ISO_CUI_DIR=/path/to/CUI`.
+`<cui/cui_iso_opts.h>` for the named-field solids.
+
+`cui-iso` finds CUI on its own when it sits inside a CUI checkout (the
+`extensions/cui-iso` layout) or beside a vendored one (`../vendor/CUI`).
+Otherwise configure with `-DCUI_ISO_CUI_DIR=/path/to/the/CUI/source/tree`.
+
+One symbol is required from CUI: `cui_push_clip_checked`, the clip push that
+reports whether the clip stack had room. A scene with bounds cannot be
+clipped safely without it, so link against a CUI that has it. Two ways to get
+one:
+
+- a CUI that already carries it (upstream PR #129 adds it to CUI), or
+- the patch shipped here, applied inside the CUI source tree:
+
+```sh
+cd /path/to/CUI && git apply /path/to/cui-iso/patches/cui-push-clip-checked.patch
+```
+
+The configure step checks for the symbol and stops with that instruction
+instead of letting the build fail at link time.

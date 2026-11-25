@@ -69,7 +69,9 @@ void cui_iso_wedge_ex(cui_iso_scene *s, const cui_iso_wedge_opts *o) {
 }
 
 void cui_iso_text_ex(cui_iso_scene *s, const cui_iso_text_opts *o) {
-    if (!o || !o->text) return;
+    /* A null caption is refused by cui_iso_text, so the rule lives in one
+     * place and both spellings behave the same. */
+    if (!o) return;
     cui_iso_text(s, o->x, o->y, o->z, o->text, o->color);
 }
 

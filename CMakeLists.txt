@@ -15,14 +15,51 @@ if(CUI_ISO_SANITIZE AND NOT MSVC)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
-# Where CUI lives. The default is a vendored checkout beside this directory,
-# which is how it is arranged here; a standalone consumer points it at its own
-# CUI checkout or install instead of copying that layout.
-set(CUI_ISO_CUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../vendor/CUI" CACHE PATH
+# Where CUI lives. Two layouts are found without any -D:
+#   - a vendored CUI checkout beside the extension (../vendor/CUI);
+#   - this extension inside a CUI checkout (extensions/cui-iso), where the CUI
+#     source tree is two directories up.
+# The vendored path is tried first: two directories up can be any workspace, and
+# a workspace that happens to hold a CMakeLists.txt is not a CUI checkout.
+# A standalone consumer points CUI_ISO_CUI_DIR at its own CUI checkout instead.
+set(CUI_ISO_CUI_DIR "" CACHE PATH
     "Path to the CUI source tree whose CMake target this library links")
+if(NOT CUI_ISO_CUI_DIR)
+    foreach(_cui_iso_cui_candidate
+            "${CMAKE_CURRENT_SOURCE_DIR}/../vendor/CUI"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+        if(EXISTS "${_cui_iso_cui_candidate}/CMakeLists.txt")
+            set(CUI_ISO_CUI_DIR "${_cui_iso_cui_candidate}" CACHE PATH
+                "Path to the CUI source tree whose CMake target this library links"
+                FORCE)
+            break()
+        endif()
+    endforeach()
+endif()
 if(NOT EXISTS "${CUI_ISO_CUI_DIR}/CMakeLists.txt")
     message(FATAL_ERROR
-        "CUI not found at ${CUI_ISO_CUI_DIR}. Set -DCUI_ISO_CUI_DIR=<path to CUI>.")
+        "CUI not found at '${CUI_ISO_CUI_DIR}'. Set -DCUI_ISO_CUI_DIR=<path to the CUI source tree>.")
+endif()
+get_filename_component(CUI_ISO_CUI_DIR "${CUI_ISO_CUI_DIR}" ABSOLUTE)
+
+# The library needs one symbol from CUI: cui_push_clip_checked, the clip push
+# that reports whether the clip stack had room. Stock CUI has only
+# cui_push_clip, which refuses silently at the 64-deep limit: the scene would
+# draw outside its bounds, and the matching pop would take the caller's own
+# clip. Check for the symbol here, so a CUI without it fails with a sentence
+# instead of a link error.
+if(EXISTS "${CUI_ISO_CUI_DIR}/include/cui/cui.h")
+    file(READ "${CUI_ISO_CUI_DIR}/include/cui/cui.h" _cui_iso_cui_header)
+    string(FIND "${_cui_iso_cui_header}" "cui_push_clip_checked" _cui_iso_has_checked_clip)
+    if(_cui_iso_has_checked_clip EQUAL -1)
+        message(FATAL_ERROR
+            "The CUI checkout at '${CUI_ISO_CUI_DIR}' has no "
+            "cui_push_clip_checked(), which cui-iso needs to clip a scene "
+            "without taking the caller's clip. Use a CUI that has it: "
+            "upstream PR #129 adds it to CUI, or apply "
+            "'git apply patches/cui-push-clip-checked.patch' inside that CUI "
+            "source tree.")
+    endif()
 endif()
 
 add_subdirectory(${CUI_ISO_CUI_DIR} ${CMAKE_CURRENT_BINARY_DIR}/cui)

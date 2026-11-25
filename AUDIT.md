@@ -66,3 +66,66 @@ Closed upstream-facing review findings, each with the check that proves it.
 | 9 | `extern "C"` closed before `cui_iso_palette_default`, so a C++ caller linked a mangled symbol. | Guard extended past it; `nm` on a C++ object shows `_cui_iso_palette_default`, not `__Z23cui_iso_palette_defaultP7cui_ctx`. |
 | 10 | Recoverable UBSan findings printed and the tests still passed. | `-fno-sanitize-recover=all` in the sanitizer build. |
 | 11 | The vendored `include/cui` headers drifted from the source headers, so an install shipped an old header. | CI diffs the two, with the em dash substituted. Caught only by testing against the install prefix rather than the source tree. |
+
+## Review pass 2: CodeRabbit findings (39)
+
+The automated reviewer returned 39 findings on the pull request. 34 were real
+defects and were fixed in this pass; 5 were already closed by the header
+rewrite that preceded it. Each row names the code that now carries the fix.
+
+| # | Finding | Resolution |
+|---|---------|------------|
+| 1 | `cui_iso_hit_box` did not say it tests only the lid. | The public header says the box is tested on its projected LID and points to `cui_iso_hit_solid` for the full volume (`include/cui/cui_iso.h:259`). |
+| 2 | The public examples used internal positional forms, so a public-header-only caller could not compile them. | The header example uses `cui_iso_box_named` and names `<cui/cui_iso_opts.h>`; the layout text points at the `_ex` forms (`include/cui/cui_iso.h:30`). |
+| 3 | Captions were not documented as drawing above the solids. | Already closed: the header says a caption is anchored in world space but drawn in a final overlay pass (`include/cui/cui_iso.h:218`). |
+| 4 | The `_named` macros depend on `CUI__OPTS`, which CUI defines only in C mode, so they were unusable from C++. | Already closed: the macro block sits under `#ifndef __cplusplus`; the `_ex` functions stay public for C++ clients (`include/cui/cui_iso_opts.h:214`). CI compiles both headers standalone in C and C++. |
+| 5 | The named-constructor example did not compile. | Already closed: the example is `.cx/.w/.d/.height/.top/.side` only, no invalid field (`include/cui/cui_iso_opts.h:207`). |
+| 6 | The cylinder side count was stored as a float and cast back at draw time, which is undefined past the int range. | The count is clamped to 8..64 at submission, before it is stored (`cui_iso.c:361`, `cui_iso.c:717`). |
+| 7 | Picking sampled 20 rim points while the renderer used the clamped side count, so a vertex on the barrel was not clickable. | One sampler now serves both: `iso__cyl_rim()` builds the rim the way the renderer does, and `cui_iso_pick` reads the side count off the solid (`cui_iso.c:1233`). `cui_iso_hit_cylinder` has no side count, so it uses the roundest cylinder the renderer can draw (64) and says so. |
+| 8 | A negative label value was still printed as a number. | The number is formatted only when `label_value >= 0` and `label_decimals >= 0`; a negative value keeps the label-only form, and zero still prints (`cui_iso.c:889`). |
+| 9 | `cui_iso_hit_box` accepted any click on a zero-scale camera, because every cross product was zero. | A zero scale is rejected, like `cui_iso_hit_solid` (`cui_iso.c:1195`). |
+| 10 | The wedge always drew the far-side `+x` gable, which painted over the near roof after a half-turn. | Each face is tested against the camera direction and its own normal; only camera-facing faces are drawn and the world-space lighting is unchanged (`cui_iso.c:726`). |
+| 11 | `cui_iso_end` popped a clip it had never pushed when the clip stack was full, removing the caller's clip. | CUI grew `cui_push_clip_checked()`, which reports whether the push was taken (`src/cui_draw.c:63`). When the push is refused the scene draws nothing and pops nothing (`cui_iso.c:975`). |
+| 12 | Reduced motion rewrote a disabled pulse (value 2) to 0.5, switching the pulse on. | Only a pulse already inside `[0,1]` is frozen at the midpoint (`cui_iso.c:964`). |
+| 13 | The pick index contract did not say whether it was the draw order or the submission order. | Already closed: the header says the index is the order the solids were submitted in, so the answer maps back to the call that added the solid (`include/cui/cui_iso.h:276`). |
+| 14 | `cui_iso_set_reduced_motion(NULL, true)` dereferenced NULL. | NULL guard added (`cui_iso.c:554`) and the entry point is in the NULL block of the null test. |
+| 15 | The lattice left node 0 isolated and gave a two-node, one-stick lattice no edge at all. | Neighbours are chosen by geometric distance and each pair is linked once (`cui_iso.c:448`). The limits test asserts the solid counts: 2 nodes give 3 solids, 4 nodes 10, 24 nodes 300. |
+| 16 | The lifetime of a label string was not documented. | Already closed: the header says the string is not copied and must stay valid until `cui_iso_end` returns (`include/cui/cui_iso.h:221`). |
+| 17 | `cui_iso_pick` tested the un-chamfered box, so a cut-away corner was clickable. | `iso__hit_box_volume()` builds the hull from the same chamfered footprint the renderer uses (`cui_iso.c:1278`). `cui_iso_hit_solid` keeps its rectangular contract. The pick test asserts a click in the cut-away corner selects nothing. |
+| 18 | `cui_iso_begin` with a NULL camera left the previous batch alive, so the next `cui_iso_end` drew the old scene. | A NULL camera clears the batch and marks the scene not-begun (`cui_iso.c:263`). |
+| 19 | The disk stack looped over every disk even when the scene was full or absent. | The stack returns early outside a batch and is capped at the room left in the batch, so a million-disk stack stops after the disks that fit (`cui_iso.c:513`). The limits test asserts the batch ends exactly at the cap. |
+| 20 | The grid cell count rode in a float and was cast back to int at draw time, which is undefined past the int range. | The count is validated and capped at submission (`cui_iso.c:340`), and the cap is small enough for the float round trip to be exact. |
+| 21 | The cylinder cap passed a centre point and a repeated vertex, so CUI feathered the internal radial edges. | The cap is the rim polygon with `sides` vertices and no centre (`cui_iso.c:764`). |
+| 22 | `cui_iso_layout_grid` returned a positive count for negative dimensions and could not represent a product past `INT_MAX`. | Both dimensions and the product are checked before anything is written; an invalid grid returns 0 (`cui_iso.c:134`). The limits test asserts 64x64 gives 4096 and that 4096x2, 2x2049, -1x4 and 0x0 are refused. |
+| 23 | `cui_iso_depth_bias_last` changed what `cui_iso_pick` reported after the frame was painted. | The write is refused outside a batch (`cui_iso.c:1044`), so the pick always matches the frame. |
+| 24 | `cui_iso_text_ex` and `cui_iso_text` disagreed about a NULL caption, so the two spellings left different scene counts. | The rule lives in one place: `cui_iso_text` refuses a NULL caption and `_ex` delegates to it (`cui_iso_opts.c:71`). |
+| 25 | The default configure failed on a clean checkout because the CUI path did not exist. | `CUI_ISO_CUI_DIR` now starts empty and auto-detects the CUI checkout two levels up (or `../vendor/CUI`); the error names the variable. A configure with no `-D` was run and found the tree (`CMakeLists.txt:21`). |
+| 26 | The null test checked the scene count after a rejected insertion, which cannot see a label written onto another solid. | The test now renders two frames that differ by one refused call and compares them byte for byte (`test_cui_iso_null.c:29`). With the label guard removed the frames differ and the test fails. |
+| 27 | The demo shadow alpha went negative before the `uint8_t` cast, which is undefined behaviour. | The alpha is clamped in float first (`scene_demo.c:170`). |
+| 28 | The top10 example compared only the alpha channel to decide which stage pulses, so every stage pulsed. | The stage index decides (`examples/top10.c:92`). |
+| 29 | The build and the install each used a full copy of the public headers, so a fix had to be made twice. | `include/cui/` is canonical; `cui_iso.h` and `cui_iso_opts.h` are thin forwarders that keep the old include spellings working. |
+| 30 | The sort test could not tell a correct sort from an inverted one. | The test keeps the insertion-order comparison and adds a depth-direction assertion: two overlapping boxes, and the nearer one must be the one painted on top, in either insertion order (`test_cui_iso_sort.c:74`). With the comparator inverted the test reports the far box's colour and fails. |
+| 31 | The top10 example took an output directory and then wrote to a hard-coded path. | The directory is a file-scope variable and every case writes into it (`examples/top10.c`). |
+| 32 | The top10 pulse phase could go negative, and a negative pulse is the "no pulse" sentinel. | The phase is wrapped into `[0,1)` (`examples/top10.c`). |
+| 33 | `end_case` ignored the PNG write result and the allocation, and `main` returned 0 after a failed write. | `end_case` returns a bool and checks both, and `main` returns 1 when any case fails (`examples/top10.c:41`). |
+| 34 | The top10 example built a shell command from `argv[1]`, so a path with a space or a metacharacter was run by the shell. | The directories are created with `mkdir(2)` (`_mkdir` on Win32) through a portable recursive helper; no shell is involved (`examples/top10.c:298`). |
+| 35 | The two source slots were laid out along x, so they landed between the stations instead of in a column beside the first. | The sources differ along y (`examples/top10.c:124`). |
+| 36 | The `text` case used a fixed near-white colour, unreadable on the light theme. | It uses the theme token `gpal.ink` (`cases.c:111`). |
+| 37 | The pipeline example did not set a theme, so it started light while its labels were fixed near-white. | The example asks for the dark theme, which matches its fixed label colours (`examples/pipeline.c:141`). |
+| 38 | The README said captions were depth-sorted like a solid. | The README says a caption is drawn on top of all solids in a final overlay pass (`README.md`). |
+| 39 | The README called a positional `cui_iso_link_labeled` with `&scene`, which does not exist and would not compile. | The example calls `cui_iso_link_labeled_named(scene, ...)` with named fields (`README.md`). |
+
+### What this pass does not claim
+
+- The extension needs one new symbol from CUI, `cui_push_clip_checked`, and
+  this pass adds it to CUI itself (`include/cui/cui.h`, `src/cui_draw.c`), so
+  CUI and the extension ship together. A consumer who takes only
+  `extensions/cui-iso` must take that CUI change too; the configure step
+  checks for the symbol and stops with the instruction instead of failing at
+  link time.
+- The three new test assertions were checked against deliberately broken
+  code: removing the label guard, inverting the depth comparator and ignoring
+  the chamfer each make the matching test fail. They are not a proof that no
+  other defect remains.
+- The CI runners, the macOS backends and the Windows build were not exercised
+  here. Only the software renderer under ASan and UBSan on this machine.

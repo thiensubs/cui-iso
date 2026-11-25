@@ -108,7 +108,7 @@ static void c_text(cui_iso_scene *s) {
                       .chamfer = 7, .top = gpal.block, .side = gpal.block_side);
     cui_iso_text_named(s,
                        .x = 0, .y = 0, .z = 40, .text = "AI Factory",
-                       .color = (cui_color){232, 234, 238, 255});
+                       .color = gpal.ink);
 }
 
 static void c_wedge(cui_iso_scene *s) {
