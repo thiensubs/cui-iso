@@ -129,3 +129,39 @@ rewrite that preceded it. Each row names the code that now carries the fix.
   other defect remains.
 - The CI runners, the macOS backends and the Windows build were not exercised
   here. Only the software renderer under ASan and UBSan on this machine.
+
+
+## Review pass 3: CodeRabbit findings (7)
+
+The automated reviewer returned 7 more findings on the pull request. All 7 were
+real and all 7 are fixed. Each row names the code that now carries the fix and
+the check that proves it.
+
+| # | Finding | Resolution |
+|---|---------|------------|
+| 1 | The extension added the CUI source tree a second time when the host app already had a `cui::cui` target, so CMake refused to create the target twice. | The source tree is only added when there is no `cui::cui` target to reuse (`CMakeLists.txt:45`). A host project that adds CUI and then the extension configures clean; with the check reverted, CMake stops with `add_library cannot create target "cui" because another target with the same name already exists`. |
+| 2 | The install interface hardcoded `include`, so a consumer that installed the headers somewhere else could not find them. | `$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>` (`CMakeLists.txt:117`). Installed with `-DCMAKE_INSTALL_INCLUDEDIR=headers`, the export records `headers`, and a consumer that only knows `find_package(cui_iso CONFIG REQUIRED)` compiles and runs. |
+| 3 | The generated `cui_isoConfig.cmake` accepted any CUI: `find_dependency(cui)` takes a CUI from before the clip APIs existed, and the failure was a link error at build time. | The config reads the header of the CUI it found and refuses one without `cui_push_clip_checked()` and `cui_current_clip()`, with the reason in `cui_iso_NOT_FOUND_MESSAGE` (`cmake/cui_isoConfig.cmake.in`). |
+| 4 | A theme token was shaded and faded as raw bytes. A token is a sentinel -- its bytes are an id and its alpha is 0 -- so shading it turned the id into a literal RGB and left the alpha at 0. | Every draw path resolves the colour with `cui_color_of()` before shading or fading (`cui_iso.c:610` and the other call sites). The smoke test renders a scene with a token and the same scene with the colour the token resolves to, and requires the two buffers to be byte identical. |
+| 5 | `cui_iso_pick` ignored the host's own clip, so a click selected a solid the host had clipped away. | The scene records the clip that was really in effect -- the scene bounds intersected with the host's clip -- after a successful clip push (`cui_iso.c:1056`), and the pick uses it. The new `cui_current_clip()` in CUI reports the intersection. |
+| 6 | `cui_iso_pick` used the bounds the caller set now, not the bounds of the last paint, so a caller that changed the bounds after painting changed what a click selected. | The painted clip and the pending bounds are separate fields: the painted clip wins once there has been a paint, and the pending bounds stay the fallback for a scene that was never painted (`cui_iso.c:1384`). |
+| 7 | The extension's public declarations used CUI's `CUI_API`, which is `__declspec(dllimport)` for a consumer of a shared CUI on MSVC: the extension's own functions would be read as imports. | The extension has its own `CUI_ISO_API`, keyed on `CUI_ISO_SHARED` and `CUI_ISO_BUILDING` (`include/cui/cui_iso.h:57`). A configure-time check rejects a bare `CUI_API` declaration in the public headers, and `test_cui_iso_api` compiles with `CUI_SHARED` defined and defines one of the extension's functions, which MSVC refuses for an imported symbol. |
+
+### What this pass does not claim
+
+- The extension needs **two** new CUI APIs now, `cui_push_clip_checked()` and
+  `cui_current_clip()`, not one. Both are added to CUI by the same upstream PR
+  (#129). A consumer who takes only `extensions/cui-iso` must take that CUI
+  change too. The patch shipped here,
+  `patches/cui-iso-clip-api.patch`, adds both to upstream master; the
+  configure step checks for the symbols and stops with the instruction instead
+  of failing at link time.
+- The `dllimport` proof is only enforced on MSVC. On clang and GCC the
+  attribute is not checked, so the compile-only test passes everywhere; the
+  configure-time header scan is the portable gate. The Windows CI job is the
+  real gate.
+- The mutation checks cover the four behaviour fixes: reverting each one makes
+  its own test fail. They are not a proof that no other defect remains.
+- The CI runners, the macOS backends and the Windows build were not exercised
+  here. Only the software renderer under ASan and UBSan on this machine, plus
+  configure-only checks of the host-project and install layouts.

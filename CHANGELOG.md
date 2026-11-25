@@ -64,15 +64,48 @@
   root of the sources. `include/cui/` is canonical now and the root copies are
   thin forwarders.
 
+### Fixed (review pass 3, 7 CodeRabbit findings)
+- The extension configured the CUI source tree a second time when the host app
+  already had a `cui::cui` target, and CMake refused to create the target
+  twice. The existing target is reused now.
+- The install interface hardcoded `include`, so a consumer that installed the
+  headers elsewhere could not find them. It follows `CMAKE_INSTALL_INCLUDEDIR`
+  now.
+- The installed package accepted any CUI, and a CUI from before the clip APIs
+  existed failed at link time. `find_package(cui_iso)` refuses it with a
+  sentence now.
+- A theme token was shaded and faded as raw bytes. A token is a sentinel, not
+  a colour: its bytes are an id and its alpha is 0. Every draw path resolves
+  the token before shading it.
+- `cui_iso_pick` ignored the host's own clip, so a click could select a solid
+  the host had clipped away. The scene records the clip that was really in
+  effect and the pick uses it.
+- `cui_iso_pick` used the bounds the caller set now, not the bounds of the
+  last paint. Changing the bounds after a paint no longer changes what a click
+  selects.
+- The extension's public declarations used CUI's `CUI_API`, which is
+  `__declspec(dllimport)` for a consumer of a shared CUI on MSVC. The
+  extension has its own `CUI_ISO_API` now.
+
 ### Requirements
-- The library needs `cui_push_clip_checked` from CUI. Upstream PR #129 adds
-  it to CUI; `patches/cui-push-clip-checked.patch` adds it to any CUI
-  checkout. The configure step stops with that instruction when the symbol is
-  missing, instead of failing at link time.
+- The library needs `cui_push_clip_checked` and `cui_current_clip` from CUI.
+  Upstream PR #129 adds both to CUI;
+  `patches/cui-iso-clip-api.patch` adds both to any CUI checkout. The
+  configure step stops with that instruction when a symbol is missing, instead
+  of failing at link time, and the installed package refuses a CUI without
+  them.
+
 
 ### Tests
-- `ctest` covers smoke, limits, sort order, picking against the silhouette, named-field options
-  equivalence, and palette contrast in both themes.
+- `ctest` runs 10 tests: smoke, limits, sort order, picking against the
+  silhouette, named-field options equivalence, palette contrast in both
+  themes, the null contract, the layouts, the named-field forms and the
+  extension's own export macro.
+- The smoke test renders a scene with a theme token and the same scene with
+  the colour the token resolves to, and requires the two buffers to be byte
+  identical.
+- The pick test asserts that picking follows the clip of the last paint and
+  agrees with the host's own clip.
 - The sort test also asserts which of two overlapping boxes is painted on top,
   so an inverted comparator fails instead of passing.
 - The null test compares two frames that differ by one refused call, so a

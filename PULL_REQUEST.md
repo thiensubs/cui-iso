@@ -29,11 +29,16 @@ control surfaces and status scenes.
 
 ## What this PR changes in CUI itself
 
-Two files, 11 lines added, nothing removed or changed in behaviour:
+Two files, 35 lines added, nothing removed or changed in behaviour:
 
-- `include/cui/cui.h` declares `cui_push_clip_checked`.
-- `src/cui_draw.c` implements it: the existing `cui_push_clip` becomes a
-  forwarding wrapper around it.
+- `include/cui/cui.h` declares `cui_push_clip_checked` and `cui_current_clip`,
+  and two capability macros, `CUI_HAS_PUSH_CLIP_CHECKED` and
+  `CUI_HAS_CURRENT_CLIP`, so a consumer can tell whether the CUI it found has
+  them: the version number does not say, because a patch release can add one.
+- `src/cui_draw.c` implements them: the existing `cui_push_clip` becomes a
+  forwarding wrapper around `cui_push_clip_checked`, and `cui_current_clip`
+  reports the clip that is really in effect -- the intersection of every clip
+  on the stack.
 
 `cui_push_clip` refuses silently when the clip stack is 64 deep, and
 `cui_pop_clip` pops anyway, so a caller that pushes a clip that was refused
@@ -41,8 +46,15 @@ takes the caller's own clip on the way out. The diorama needs to know whether
 its push was taken: `cui_push_clip_checked` reports it. Every existing caller
 keeps working, because `cui_push_clip` still behaves exactly as before.
 
-The extension checks for the symbol at configure time, so a CUI without it
-stops with one sentence instead of a link error.
+`cui_current_clip` is the other half: a consumer that has to agree with what
+CUI painted -- hit testing, for one -- needs the clip that decides, and the
+clip that decides is the intersection of every clip on the stack. A clip the
+consumer never pushed is invisible from the outside, so it cannot be worked
+out from there.
+
+The extension checks for both symbols at configure time, so a CUI without them
+stops with one sentence instead of a link error, and the installed package
+refuses such a CUI as well.
 
 ## Disclosure
 
@@ -71,7 +83,7 @@ Run on macOS, AppleClang 17.0.0, x86_64, from a clean `git archive` export
     CFG=0
     BUILD=0
     warnings=0
-    100% tests passed out of 9
+    100% tests passed out of 10
 
 Two further checks, both mechanical rather than visual:
 
@@ -82,7 +94,7 @@ Two further checks, both mechanical rather than visual:
   with `-Wall -Wextra -Werror`. Before the install rules, the prefix
   contained no headers at all.
 
-The nine tests, and the negative control each was measured against:
+The ten tests, and the negative control each was measured against:
 
 | Test | Asserts | Negative control |
 |---|---|---|
@@ -128,7 +140,7 @@ What was done with them:
 - The fixes were checked against deliberately broken code. Removing the label
   guard, inverting the depth comparator and ignoring the chamfer each make
   the matching test fail, so the new assertions are not vacuous.
-- The nine tests were rebuilt under ASan and UBSan with no recovery
+- The ten tests were rebuilt under ASan and UBSan with no recovery
   (`-fno-sanitize-recover=all`), so a UBSan report fails the run instead of
   printing and passing.
 - The public headers were made canonical: `include/cui/cui_iso.h` and
@@ -141,12 +153,12 @@ a fresh clone of upstream CUI master, with the shipped patch applied, so the
 published path is the tested path:
 
     git clone https://github.com/yappologistic/CUI.git
-    cd CUI && git apply /path/to/cui-iso/patches/cui-push-clip-checked.patch
+    cd CUI && git apply /path/to/cui-iso/patches/cui-iso-clip-api.patch
     cmake -S /path/to/cui-iso -B b -DCUI_ISO_CUI_DIR=$PWD -DCUI_ISO_SANITIZE=ON
     cmake --build b -j8
     ctest --test-dir b --output-on-failure
 
-    100% tests passed out of 9
+    100% tests passed out of 10
 
 Without the patch, the configure step stops with the instruction to apply it,
 instead of failing at link time.
@@ -154,9 +166,50 @@ instead of failing at link time.
 The ten example PNGs render from the current tree with combined md5
 `6264ecd85502a68f3a0b97adc1352a23`.
 
+## Review pass 3: the 7 CodeRabbit findings
+
+The automated reviewer returned 7 more findings after pass 2. All 7 were real
+and all 7 are fixed. Every finding, the fix and the file that carries it are
+in `extensions/cui-iso/AUDIT.md`, one row each.
+
+What they were:
+
+- The extension configured the CUI source tree a second time when the host app
+  already had a `cui::cui` target. CMake refuses to create the same target
+  twice, so the extension now reuses the target that is already there.
+- The install interface hardcoded `include`, so a consumer that installed the
+  headers somewhere else could not find them. It follows
+  `CMAKE_INSTALL_INCLUDEDIR` now.
+- The installed package accepted any CUI, and a CUI from before the clip APIs
+  existed failed at link time. `find_package(cui_iso)` refuses it with a
+  sentence now.
+- A theme token was shaded and faded as raw bytes. A token is a sentinel, not
+  a colour: its bytes are an id and its alpha is 0. Every draw path resolves
+  the token before shading it.
+- `cui_iso_pick` ignored the host's own clip, and used the bounds the caller
+  set now rather than the bounds of the last paint. Both are fixed: the scene
+  records the clip that was really in effect and the pick uses it.
+- The extension's public declarations used CUI's `CUI_API`, which is
+  `__declspec(dllimport)` for a consumer of a shared CUI on MSVC. The
+  extension has its own `CUI_ISO_API` now.
+
+What was done with them:
+
+- The fixes were checked against deliberately broken code. Shading a token as
+  bytes, ignoring the host's clip, picking with the pending bounds and
+  declaring one function with `CUI_API` each make the matching test or the
+  configure step fail, so the new assertions are not vacuous.
+- The two clip APIs the extension needs are now added by the same upstream PR:
+  `cui_push_clip_checked` and `cui_current_clip`, with two capability macros
+  so a consumer can tell whether the CUI it found has them.
+  `patches/cui-iso-clip-api.patch` carries the same change for a separate
+  checkout, and applies to upstream master e2a0ad2.
+- The ten example PNGs render byte for byte as before (combined md5
+  `6264ecd85502a68f3a0b97adc1352a23`).
+
 ## Platforms tested
 
-macOS, AppleClang 17. All nine tests run on the software renderer, and the
+macOS, AppleClang 17. All ten tests run on the software renderer, and the
 default windowed Cocoa build (library and examples) builds with zero warnings.
 The OpenGL renderer path was not exercised: no test here drives a window.
 
@@ -165,11 +218,11 @@ The OpenGL renderer path was not exercised: no test here drives a window.
 
 ## Risks and gaps, stated plainly
 
-- **The extension needs one symbol from CUI.** `cui_push_clip_checked` is
-  added by this PR, and `patches/cui-push-clip-checked.patch` carries the same
-  change for anyone who wants it in a separate checkout. A CUI without that
-  symbol cannot build the extension; the configure step says so in one
-  sentence.
+- **The extension needs two symbols from CUI.** `cui_push_clip_checked` and
+  `cui_current_clip` are added by this PR, and `patches/cui-iso-clip-api.patch`
+  carries the same change for anyone who wants it in a separate checkout. A
+  CUI without those symbols cannot build the extension; the configure step
+  says so in one sentence.
 - **One spelling per solid, with two documented exceptions.** Every solid is
   constructed through `*_ex` and its options struct, or the `*_named` macro over
   it. The positional constructors are declared only in `cui_iso_internal.h`, for
