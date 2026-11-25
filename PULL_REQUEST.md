@@ -207,6 +207,19 @@ What was done with them:
 - The ten example PNGs render byte for byte as before (combined md5
   `6264ecd85502a68f3a0b97adc1352a23`).
 
+## Review pass 4: the 1 CodeRabbit finding
+
+The reviewer returned one more finding after pass 3, on the fix commits. It was
+real and it is fixed. The finding, the fix and the proof are in
+`extensions/cui-iso/AUDIT.md`, one row.
+
+- The installed package looked the CUI header up with `find_file`, which caches
+  its result. A build directory that was configured against one CUI kept
+  reading that CUI's header after `cui_DIR` was pointed at another one, so the
+  capability check could accept a CUI without the clip APIs. The lookup clears
+  its cached result now: a consumer that re-configures the same build
+  directory against another CUI is checked against that CUI.
+
 ## Platforms tested
 
 macOS, AppleClang 17. All ten tests run on the software renderer, and the

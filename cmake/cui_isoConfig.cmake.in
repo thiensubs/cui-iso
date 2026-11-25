@@ -10,6 +10,11 @@ find_dependency(cui)
 # were added, and the failure would then be a link error at build time. The
 # installed header is what says which CUI this is.
 get_target_property(_cui_iso_cui_includes cui::cui INTERFACE_INCLUDE_DIRECTORIES)
+# find_file caches its result, so a build directory that was configured against
+# another CUI would keep reading that older header. Drop the normal and the
+# cached value first, so the check always looks at the CUI that was found now.
+unset(_cui_iso_cui_header)
+unset(_cui_iso_cui_header CACHE)
 find_file(_cui_iso_cui_header cui/cui.h PATHS ${_cui_iso_cui_includes} NO_DEFAULT_PATH)
 set(_cui_iso_has_checked_clip -1)
 set(_cui_iso_has_current_clip -1)

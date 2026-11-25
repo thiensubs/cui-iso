@@ -87,6 +87,12 @@
   `__declspec(dllimport)` for a consumer of a shared CUI on MSVC. The
   extension has its own `CUI_ISO_API` now.
 
+### Fixed (review pass 4, 1 CodeRabbit finding)
+- The installed package cached the CUI header it checked, so a build directory
+  that was configured against one CUI kept reading that older header after
+  `cui_DIR` was pointed at another one. The lookup clears its cached result
+  now, so the check always reads the CUI that was found in this configure.
+
 ### Requirements
 - The library needs `cui_push_clip_checked` and `cui_current_clip` from CUI.
   Upstream PR #129 adds both to CUI;

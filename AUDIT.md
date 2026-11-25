@@ -165,3 +165,23 @@ the check that proves it.
 - The CI runners, the macOS backends and the Windows build were not exercised
   here. Only the software renderer under ASan and UBSan on this machine, plus
   configure-only checks of the host-project and install layouts.
+
+
+## Review pass 4: CodeRabbit findings (1)
+
+The reviewer returned one more finding after pass 3, on the fix commits. It was
+real and it is fixed.
+
+| # | Finding | Resolution |
+|---|---------|------------|
+| 1 | The generated `cui_isoConfig.cmake` looked the CUI header up with `find_file`, and `find_file` caches its result. A build directory that was configured against one CUI kept reading that CUI's header after `cui_DIR` was pointed at another one, so the capability check could accept a CUI without the clip APIs, or refuse a CUI that has them. | The lookup drops the normal and the cached value of `_cui_iso_cui_header` first (`cmake/cui_isoConfig.cmake.in:13`), so every configure reads the header of the CUI that was found now. A consumer configured against a CUI with the two clip APIs and re-configured in the same build directory against a CUI without them now stops with `cui-iso needs a CUI with cui_push_clip_checked() and cui_current_clip(); the CUI that was found does not have them`, and the cache entry points at the new CUI's header. With the two lines removed, that same re-configure succeeds and the cache still points at the old header. |
+
+### What this pass does not claim
+- The check is a configure-time check on the header of the CUI that was found.
+  It says which CUI this build directory was configured against; it does not
+  prove that the library a consumer links at run time is the same one.
+- The proof was run here: two stand-in CUI installs whose headers differ in
+  the two symbols, and the real installed package. The CI runners and the
+  Windows build were not exercised for this row.
+- Reverting the fix is caught by the same two-step configure. It is not a
+  proof that no other stale-cache path remains.
