@@ -1,0 +1,29 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(cui)
+
+# The extension needs two clip APIs from CUI that stock CUI does not have:
+# cui_push_clip_checked(), which reports whether the clip was taken, and
+# cui_current_clip(), which reports the clip that is really in effect.
+# find_dependency(cui) takes any installed CUI, including one from before they
+# were added, and the failure would then be a link error at build time. The
+# installed header is what says which CUI this is.
+get_target_property(_cui_iso_cui_includes cui::cui INTERFACE_INCLUDE_DIRECTORIES)
+find_file(_cui_iso_cui_header cui/cui.h PATHS ${_cui_iso_cui_includes} NO_DEFAULT_PATH)
+set(_cui_iso_has_checked_clip -1)
+set(_cui_iso_has_current_clip -1)
+if(_cui_iso_cui_header)
+    file(READ "${_cui_iso_cui_header}" _cui_iso_cui_header_text)
+    string(FIND "${_cui_iso_cui_header_text}" "cui_push_clip_checked" _cui_iso_has_checked_clip)
+    string(FIND "${_cui_iso_cui_header_text}" "cui_current_clip" _cui_iso_has_current_clip)
+endif()
+if(_cui_iso_has_checked_clip EQUAL -1 OR _cui_iso_has_current_clip EQUAL -1)
+    set(cui_iso_FOUND FALSE)
+    set(cui_iso_NOT_FOUND_MESSAGE
+        "cui-iso needs a CUI with cui_push_clip_checked() and cui_current_clip(); the CUI that was found does not have them")
+    return()
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/cui_isoTargets.cmake")
+check_required_components(cui_iso)

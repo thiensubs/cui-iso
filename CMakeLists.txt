@@ -36,42 +36,87 @@ if(NOT CUI_ISO_CUI_DIR)
         endif()
     endforeach()
 endif()
-if(NOT EXISTS "${CUI_ISO_CUI_DIR}/CMakeLists.txt")
-    message(FATAL_ERROR
-        "CUI not found at '${CUI_ISO_CUI_DIR}'. Set -DCUI_ISO_CUI_DIR=<path to the CUI source tree>.")
+# The CUI this extension links against. If the host app already has a
+# cui::cui target -- the alias CUI makes in its own tree, or an imported
+# package from find_package(cui) -- that one is used and the CUI source tree
+# is not configured a second time: a second add_subdirectory would run
+# add_library(cui ...) twice, and CMake refuses to create the same target
+# twice. So the source tree is only added when there is no target to reuse.
+if(TARGET cui::cui)
+    set(CUI_ISO_USE_HOST_CUI TRUE)
+else()
+    set(CUI_ISO_USE_HOST_CUI FALSE)
+    if(NOT EXISTS "${CUI_ISO_CUI_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "CUI not found at '${CUI_ISO_CUI_DIR}'. Set -DCUI_ISO_CUI_DIR=<path to the CUI source tree>.")
+    endif()
+    get_filename_component(CUI_ISO_CUI_DIR "${CUI_ISO_CUI_DIR}" ABSOLUTE)
 endif()
-get_filename_component(CUI_ISO_CUI_DIR "${CUI_ISO_CUI_DIR}" ABSOLUTE)
 
-# The library needs one symbol from CUI: cui_push_clip_checked, the clip push
-# that reports whether the clip stack had room. Stock CUI has only
+# The library needs two clip APIs from CUI: cui_push_clip_checked, the clip
+# push that reports whether the clip stack had room, and cui_current_clip,
+# which reports the clip that is really in effect. Stock CUI has only
 # cui_push_clip, which refuses silently at the 64-deep limit: the scene would
 # draw outside its bounds, and the matching pop would take the caller's own
-# clip. Check for the symbol here, so a CUI without it fails with a sentence
-# instead of a link error.
-if(EXISTS "${CUI_ISO_CUI_DIR}/include/cui/cui.h")
+# clip. Check for the symbols here, so a CUI without them fails with a
+# sentence instead of a link error.
+#
+# The check reads the header of the CUI source tree. When the host brought its
+# own CUI there is no source tree to read, and the compile-time check in
+# cui_iso.c is what catches an old one.
+if(NOT CUI_ISO_USE_HOST_CUI AND EXISTS "${CUI_ISO_CUI_DIR}/include/cui/cui.h")
     file(READ "${CUI_ISO_CUI_DIR}/include/cui/cui.h" _cui_iso_cui_header)
     string(FIND "${_cui_iso_cui_header}" "cui_push_clip_checked" _cui_iso_has_checked_clip)
-    if(_cui_iso_has_checked_clip EQUAL -1)
+    string(FIND "${_cui_iso_cui_header}" "cui_current_clip" _cui_iso_has_current_clip)
+    if(_cui_iso_has_checked_clip EQUAL -1 OR _cui_iso_has_current_clip EQUAL -1)
         message(FATAL_ERROR
-            "The CUI checkout at '${CUI_ISO_CUI_DIR}' has no "
-            "cui_push_clip_checked(), which cui-iso needs to clip a scene "
-            "without taking the caller's clip. Use a CUI that has it: "
-            "upstream PR #129 adds it to CUI, or apply "
-            "'git apply patches/cui-push-clip-checked.patch' inside that CUI "
+            "The CUI checkout at '${CUI_ISO_CUI_DIR}' is missing a clip API "
+            "cui-iso needs: cui_push_clip_checked() and cui_current_clip(). "
+            "Use a CUI that has them: upstream PR #129 adds both to CUI, or "
+            "apply 'git apply patches/cui-iso-clip-api.patch' inside that CUI "
             "source tree.")
     endif()
 endif()
 
-add_subdirectory(${CUI_ISO_CUI_DIR} ${CMAKE_CURRENT_BINARY_DIR}/cui)
-include(${CUI_ISO_CUI_DIR}/cmake/CuiApp.cmake)
+if(NOT CUI_ISO_USE_HOST_CUI)
+    add_subdirectory(${CUI_ISO_CUI_DIR} ${CMAKE_CURRENT_BINARY_DIR}/cui)
+    include(${CUI_ISO_CUI_DIR}/cmake/CuiApp.cmake)
+endif()
 
 # The reusable layer. Build it as a library so an app links cui_iso and gets
 # the whole diorama API; nothing here depends on mcpd-ui.
+#
+# The install layout is decided here and not at the install section: the
+# export records the include directory, and a hardcoded "include" points at
+# the wrong place when the consumer installs the headers somewhere else
+# (-DCMAKE_INSTALL_INCLUDEDIR=headers).
+include(GNUInstallDirs)
+
+# The extension's public headers must not use CUI's import/export macro. A
+# consumer of a shared CUI sees every CUI_API declaration as an import, which
+# is right for CUI's functions and wrong for the extension's own: MSVC then
+# refuses their definition (C2491) and the consumer looks for them in CUI's
+# DLL instead of in the library it linked. The API test below proves it on
+# Windows; this check catches the same mistake on every platform, by reading
+# the headers. Only a declaration at the start of a line counts, so the
+# comment that explains the rule does not trip it.
+foreach(_cui_iso_public_header
+        include/cui/cui_iso.h
+        include/cui/cui_iso_opts.h
+        cui_iso_internal.h)
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/${_cui_iso_public_header}" _cui_iso_header_text)
+    string(REGEX MATCHALL "\n[ \t]*CUI_API[ \t]" _cui_iso_bare_api "${_cui_iso_header_text}")
+    if(_cui_iso_bare_api)
+        message(FATAL_ERROR
+            "${_cui_iso_public_header} declares a function with CUI_API. The extension has its own macro, CUI_ISO_API: a consumer of a shared CUI would read this as an import and fail to link.")
+    endif()
+endforeach()
+
 add_library(cui_iso STATIC cui_iso.c cui_iso_opts.c)
 target_include_directories(cui_iso PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>)
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 target_link_libraries(cui_iso PUBLIC cui::cui)
 
 # Headless proof: renders a scene with the software renderer and writes a PNG.
@@ -141,6 +186,20 @@ add_executable(cui_iso_named_test test_cui_iso_named.c)
 target_link_libraries(cui_iso_named_test PRIVATE cui_iso)
 add_test(NAME cui_iso_named COMMAND cui_iso_named_test)
 
+# The extension's own declarations must not inherit CUI's import/export macro:
+# a consumer of a shared CUI must not read them as imports. The test is
+# compiled with CUI_SHARED defined, exactly as such a consumer would be, and
+# defines one of the extension's functions -- MSVC rejects the definition of
+# an imported symbol, so the mistake stops the build. The extension itself is
+# not linked in: this file is the definition of that symbol.
+add_executable(cui_iso_api_test test_cui_iso_api.c)
+target_include_directories(cui_iso_api_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_definitions(cui_iso_api_test PRIVATE CUI_SHARED)
+target_link_libraries(cui_iso_api_test PRIVATE cui::cui)
+add_test(NAME cui_iso_api COMMAND cui_iso_api_test)
+
 
 # A real-world example in CUI's own example shape: a CI/CD pipeline diorama.
 # Both windowed examples need the CUI app layer; a CUI built with CUI_WITH_APP=OFF
@@ -164,7 +223,6 @@ endif()
 
 # Install the public headers and the static library so a consumer can
 # use find_package(cui_iso) instead of add_subdirectory.
-include(GNUInstallDirs)
 install(TARGETS cui_iso EXPORT cui_isoTargets ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(DIRECTORY include/cui DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(EXPORT cui_isoTargets NAMESPACE cui_iso:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cui_iso)
@@ -174,8 +232,14 @@ install(EXPORT cui_isoTargets NAMESPACE cui_iso:: DESTINATION ${CMAKE_INSTALL_LI
 # finds lib/cmake/cui_iso/cui_isoConfig.cmake.
 # the same shape CUI itself installs for find_package(cui CONFIG REQUIRED).
 include(CMakePackageConfigHelpers)
-file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/cui_isoConfig.cmake
-    "include(CMakeFindDependencyMacro)\nfind_dependency(cui)\ninclude(\"\${CMAKE_CURRENT_LIST_DIR}/cui_isoTargets.cmake\")\n")
+# find_dependency(cui) takes any installed CUI, including one from before the
+# clip APIs were added, and the failure would then be a link error at build
+# time. The generated config checks the CUI it found, so the consumer gets a
+# sentence instead.
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/cui_isoConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/cui_isoConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cui_iso)
 write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/cui_isoConfigVersion.cmake
     VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
 install(FILES
