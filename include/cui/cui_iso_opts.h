@@ -183,20 +183,20 @@ typedef struct cui_iso_disk_stack_opts {
 extern "C" {
 #endif
 
-CUI_API void cui_iso_box_ex(cui_iso_scene *s, const cui_iso_box_opts *o);
-CUI_API void cui_iso_slab_ex(cui_iso_scene *s, const cui_iso_slab_opts *o);
-CUI_API void cui_iso_glass_ex(cui_iso_scene *s, const cui_iso_glass_opts *o);
-CUI_API void cui_iso_cylinder_ex(cui_iso_scene *s, const cui_iso_cylinder_opts *o);
-CUI_API void cui_iso_sphere_ex(cui_iso_scene *s, const cui_iso_sphere_opts *o);
-CUI_API void cui_iso_shadow_ex(cui_iso_scene *s, const cui_iso_shadow_opts *o);
-CUI_API void cui_iso_grid_ex(cui_iso_scene *s, const cui_iso_grid_opts *o);
-CUI_API void cui_iso_link_ex(cui_iso_scene *s, const cui_iso_link_opts *o);
-CUI_API void cui_iso_link_labeled_ex(cui_iso_scene *s, const cui_iso_link_labeled_opts *o);
-CUI_API void cui_iso_arc_ex(cui_iso_scene *s, const cui_iso_arc_opts *o);
-CUI_API void cui_iso_wedge_ex(cui_iso_scene *s, const cui_iso_wedge_opts *o);
-CUI_API void cui_iso_text_ex(cui_iso_scene *s, const cui_iso_text_opts *o);
-CUI_API void cui_iso_lattice_ex(cui_iso_scene *s, const cui_iso_lattice_opts *o);
-CUI_API void cui_iso_disk_stack_ex(cui_iso_scene *s, const cui_iso_disk_stack_opts *o);
+CUI_ISO_API void cui_iso_box_ex(cui_iso_scene *s, const cui_iso_box_opts *o);
+CUI_ISO_API void cui_iso_slab_ex(cui_iso_scene *s, const cui_iso_slab_opts *o);
+CUI_ISO_API void cui_iso_glass_ex(cui_iso_scene *s, const cui_iso_glass_opts *o);
+CUI_ISO_API void cui_iso_cylinder_ex(cui_iso_scene *s, const cui_iso_cylinder_opts *o);
+CUI_ISO_API void cui_iso_sphere_ex(cui_iso_scene *s, const cui_iso_sphere_opts *o);
+CUI_ISO_API void cui_iso_shadow_ex(cui_iso_scene *s, const cui_iso_shadow_opts *o);
+CUI_ISO_API void cui_iso_grid_ex(cui_iso_scene *s, const cui_iso_grid_opts *o);
+CUI_ISO_API void cui_iso_link_ex(cui_iso_scene *s, const cui_iso_link_opts *o);
+CUI_ISO_API void cui_iso_link_labeled_ex(cui_iso_scene *s, const cui_iso_link_labeled_opts *o);
+CUI_ISO_API void cui_iso_arc_ex(cui_iso_scene *s, const cui_iso_arc_opts *o);
+CUI_ISO_API void cui_iso_wedge_ex(cui_iso_scene *s, const cui_iso_wedge_opts *o);
+CUI_ISO_API void cui_iso_text_ex(cui_iso_scene *s, const cui_iso_text_opts *o);
+CUI_ISO_API void cui_iso_lattice_ex(cui_iso_scene *s, const cui_iso_lattice_opts *o);
+CUI_ISO_API void cui_iso_disk_stack_ex(cui_iso_scene *s, const cui_iso_disk_stack_opts *o);
 
 /* ---- the spelling to use ------------------------------------------------
  *

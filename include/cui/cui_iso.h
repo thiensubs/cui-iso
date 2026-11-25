@@ -44,6 +44,26 @@
 
 #include <cui/cui.h>
 
+/* The extension's own export macro.
+ *
+ * CUI's CUI_API belongs to CUI. On Windows with a shared build it expands to
+ * __declspec(dllimport) unless CUI_BUILDING is defined, and CUI_BUILDING is
+ * set only while CUI itself is compiled: a consumer of a shared CUI sees every
+ * CUI_API declaration as an import. That is right for CUI's functions and
+ * wrong for the extension's own, which are then definitions of an imported
+ * symbol and MSVC rejects them. So the extension keys its own macro on its own
+ * CUI_ISO_SHARED / CUI_ISO_BUILDING, and CUI_API stays CUI's.
+ */
+#if defined(_WIN32) && defined(CUI_ISO_SHARED) && defined(CUI_ISO_BUILDING)
+#  define CUI_ISO_API __declspec(dllexport)
+#elif defined(_WIN32) && defined(CUI_ISO_SHARED)
+#  define CUI_ISO_API __declspec(dllimport)
+#elif defined(__GNUC__) && defined(CUI_ISO_SHARED)
+#  define CUI_ISO_API __attribute__((visibility("default")))
+#else
+#  define CUI_ISO_API
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -70,12 +90,12 @@ typedef struct cui_iso_light {
 } cui_iso_light;
 
 /* The default light, matching mcpd-ui's look. */
-CUI_API cui_iso_light cui_iso_light_default(void);
+CUI_ISO_API cui_iso_light cui_iso_light_default(void);
 
 /* Shade a colour by how much a side faces the light. `nx`/`ny` is the side's
  * outward normal in the ground plane (unit length not required). Returns the
  * colour scaled along the light's floor..ceil range. */
-CUI_API cui_color cui_iso_shade(cui_color base, cui_iso_light light, float nx, float ny);
+CUI_ISO_API cui_color cui_iso_shade(cui_color base, cui_iso_light light, float nx, float ny);
 
 /* ---- camera -------------------------------------------------------------- */
 
@@ -89,15 +109,15 @@ typedef struct cui_iso_camera {
 } cui_iso_camera;
 
 /* Project a world point to CUI screen space. */
-CUI_API cui_vec2 cui_iso_project(const cui_iso_camera *cam, float x, float y, float z);
+CUI_ISO_API cui_vec2 cui_iso_project(const cui_iso_camera *cam, float x, float y, float z);
 
 /* Painter's-algorithm depth of a world point: larger = closer to the camera.
  * Sort solids by this, ascending, and draw in that order. */
-CUI_API float cui_iso_depth(const cui_iso_camera *cam, float x, float y);
+CUI_ISO_API float cui_iso_depth(const cui_iso_camera *cam, float x, float y);
 
 /* The camera's light-facing helpers used internally; exposed so a custom solid
  * can match the built-ins' shading. */
-CUI_API void cui_iso_basis(const cui_iso_camera *cam, float *cos_az, float *sin_az);
+CUI_ISO_API void cui_iso_basis(const cui_iso_camera *cam, float *cos_az, float *sin_az);
 
 /* ---- slots: places the library works out for you ------------------------- */
 
@@ -110,7 +130,7 @@ typedef struct cui_iso_slot {
 } cui_iso_slot;
 
 /* Raise a slot by `height` -- "put this on top of that." */
-CUI_API cui_iso_slot cui_iso_on(cui_iso_slot s, float height);
+CUI_ISO_API cui_iso_slot cui_iso_on(cui_iso_slot s, float height);
 
 /* The largest grid a layout will fill. The slot count has to fit in an int and
  * in the caller's buffer; a bigger grid is refused and returns 0. */
@@ -147,11 +167,11 @@ typedef struct cui_iso_layout_grid_opts {
     float cell;      /* world units per cell, both axes */
 } cui_iso_layout_grid_opts;
 
-CUI_API int cui_iso_layout_row_ex(cui_iso_slot *out, int n,
+CUI_ISO_API int cui_iso_layout_row_ex(cui_iso_slot *out, int n,
                                   const cui_iso_layout_row_opts *o);
-CUI_API int cui_iso_layout_ring_ex(cui_iso_slot *out, int n,
+CUI_ISO_API int cui_iso_layout_ring_ex(cui_iso_slot *out, int n,
                                    const cui_iso_layout_ring_opts *o);
-CUI_API int cui_iso_layout_grid_ex(cui_iso_slot *out, int cols, int rows,
+CUI_ISO_API int cui_iso_layout_grid_ex(cui_iso_slot *out, int cols, int rows,
                                    const cui_iso_layout_grid_opts *o);
 
 /* ---- solid list ---------------------------------------------------------- */
@@ -178,39 +198,39 @@ typedef struct cui_iso_scene cui_iso_scene;
  * added between begin and end are drawn; the rest are dropped, not overwritten. */
 #define CUI_ISO_MAX_SOLIDS 1024
 
-CUI_API cui_iso_scene *cui_iso_scene_create(void);
-CUI_API void cui_iso_scene_destroy(cui_iso_scene *s);
-CUI_API void cui_iso_scene_reset(cui_iso_scene *s);
+CUI_ISO_API cui_iso_scene *cui_iso_scene_create(void);
+CUI_ISO_API void cui_iso_scene_destroy(cui_iso_scene *s);
+CUI_ISO_API void cui_iso_scene_reset(cui_iso_scene *s);
 /* How many solids the current batch holds. Never more than CUI_ISO_MAX_SOLIDS:
  * once the batch is full further solids are dropped, so a caller can tell an
  * overflow happened by comparing what it added with what is held. */
-CUI_API int cui_iso_scene_count(const cui_iso_scene *s);
+CUI_ISO_API int cui_iso_scene_count(const cui_iso_scene *s);
 /* Clip every solid to this rectangle on screen, e.g. the canvas a diorama is
  * painted into, so a large scale cannot bleed over neighbouring widgets. End
  * pushes the clip before its first solid and pops it after its last, so the
  * calls pair. Unset is the default: draw anywhere. A zero or negative width or
  * height clears the clip, so the same scene can stop drawing to a canvas. */
-CUI_API void cui_iso_set_bounds(cui_iso_scene *s, cui_rect r);
+CUI_ISO_API void cui_iso_set_bounds(cui_iso_scene *s, cui_rect r);
 
 /* Replace the scene's light. The default matches the mcpd look; flip x and y
  * to light a scene from the other side, or lower ceil to flatten the shading. */
-CUI_API void cui_iso_set_light(cui_iso_scene *s, cui_iso_light light);
+CUI_ISO_API void cui_iso_set_light(cui_iso_scene *s, cui_iso_light light);
 
 /* Start a frame's solid batch against this camera. A NULL camera invalidates
  * the batch instead of leaving the previous one alive: the next cui_iso_end
  * draws nothing rather than the last frame's solids. */
-CUI_API void cui_iso_begin(cui_iso_scene *s, const cui_iso_camera *cam);
+CUI_ISO_API void cui_iso_begin(cui_iso_scene *s, const cui_iso_camera *cam);
 
 /* Set how every label in the scene is drawn (font, size, colour). Call once
  * after creating the scene; labels added later pick it up. Zero-initialise a
  * cui_iso_text_style for the defaults (body font, 12 px, white). */
-CUI_API void cui_iso_set_text_style(cui_iso_scene *s, cui_iso_text_style style);
+CUI_ISO_API void cui_iso_set_text_style(cui_iso_scene *s, cui_iso_text_style style);
 
 /* A link from slot `a` to slot `b`, trimmed in by `gap` world units at each end
  * so it meets the edge of whatever sits on the slot instead of its centre. This
  * is the no-magic-numbers way to connect two things: you never work out where
  * the edge is. */
-CUI_API void cui_iso_link_between(cui_iso_scene *s, cui_iso_slot a, cui_iso_slot b,
+CUI_ISO_API void cui_iso_link_between(cui_iso_scene *s, cui_iso_slot a, cui_iso_slot b,
                                   float gap, float thickness, cui_color color,
                                   float pulse);
 
@@ -220,20 +240,20 @@ CUI_API void cui_iso_link_between(cui_iso_scene *s, cui_iso_slot a, cui_iso_slot
  *
  * The string is not copied: keep it valid until cui_iso_end returns (or until
  * the batch is discarded), or the caption reads freed memory. */
-CUI_API void cui_iso_text(cui_iso_scene *s, float x, float y, float z,
+CUI_ISO_API void cui_iso_text(cui_iso_scene *s, float x, float y, float z,
                           const char *text, cui_color color);
 
 /* CUI's reduced-motion path: when on, travelling pulses freeze at rest instead
  * of animating, so a motion-sensitive user still gets a complete scene. Call
  * once after creating the scene (wire it to CUI's own reduced-motion setting). */
-CUI_API void cui_iso_set_reduced_motion(cui_iso_scene *s, bool on);
+CUI_ISO_API void cui_iso_set_reduced_motion(cui_iso_scene *s, bool on);
 
 /* Place `count` solids evenly around a circle of `radius` at height z -- the
  * hub-and-spoke layout. For each position it calls `place` with the slot index,
  * the world x/y and a 0..1 angle fraction; you draw the solid that belongs
  * there. When `conduit` is true an arc is drawn from the centre to each slot,
  * pulsing in sequence (t drives the animation, frozen under reduced motion). */
-CUI_API void cui_iso_ring(cui_iso_scene *s, float cx, float cy, float z, float radius,
+CUI_ISO_API void cui_iso_ring(cui_iso_scene *s, float cx, float cy, float z, float radius,
                           int count, float t, bool conduit, cui_color conduit_color,
                           void (*place)(cui_iso_scene *s, int index, float x, float y,
                                         float angle_frac, void *user),
@@ -241,7 +261,7 @@ CUI_API void cui_iso_ring(cui_iso_scene *s, float cx, float cy, float z, float r
 
 /* Draw the whole batch back to front into a CUI context. Call this inside your
  * paint function. */
-CUI_API void cui_iso_end(cui_iso_scene *s, cui_ctx *ui);
+CUI_ISO_API void cui_iso_end(cui_iso_scene *s, cui_ctx *ui);
 
 /* Nudge the solid added last toward (+) or away from (-) the camera when the
  * scene is sorted for drawing. The sort is by depth, which a diorama gets right;
@@ -251,7 +271,7 @@ CUI_API void cui_iso_end(cui_iso_scene *s, cui_ctx *ui);
  * Only inside a batch: after cui_iso_end the frame is already painted, and a
  * bias written then would change what cui_iso_pick reports without changing
  * what is on screen. */
-CUI_API void cui_iso_depth_bias_last(cui_iso_scene *sc, float bias);
+CUI_ISO_API void cui_iso_depth_bias_last(cui_iso_scene *sc, float bias);
 
 /* ---- picking ------------------------------------------------------------- */
 
@@ -259,16 +279,16 @@ CUI_API void cui_iso_depth_bias_last(cui_iso_scene *sc, float bias);
  * solid. A box is tested on its projected LID; the body below the lid needs
  * cui_iso_hit_solid. A sphere is tested by its screen circle, a cylinder by
  * its top ellipse plus the column beneath it. */
-CUI_API bool cui_iso_hit_box(const cui_iso_camera *cam, float sx, float sy,
+CUI_ISO_API bool cui_iso_hit_box(const cui_iso_camera *cam, float sx, float sy,
                              float cx, float cy, float z_top, float w, float d);
 /* The whole box volume, lid down to z_top - height: what cui_iso_pick uses, so a
  * click on the body of a box selects it, not only a click on its lid. */
-CUI_API bool cui_iso_hit_solid(const cui_iso_camera *cam, float sx, float sy,
+CUI_ISO_API bool cui_iso_hit_solid(const cui_iso_camera *cam, float sx, float sy,
                                float cx, float cy, float z_top, float height,
                                float w, float d);
-CUI_API bool cui_iso_hit_sphere(const cui_iso_camera *cam, float sx, float sy,
+CUI_ISO_API bool cui_iso_hit_sphere(const cui_iso_camera *cam, float sx, float sy,
                                 float x, float y, float z, float radius);
-CUI_API bool cui_iso_hit_cylinder(const cui_iso_camera *cam, float sx, float sy,
+CUI_ISO_API bool cui_iso_hit_cylinder(const cui_iso_camera *cam, float sx, float sy,
                                   float cx, float cy, float z_bottom, float radius,
                                   float height);
 
@@ -278,7 +298,7 @@ CUI_API bool cui_iso_hit_cylinder(const cui_iso_camera *cam, float sx, float sy,
  * tested by volume, spheres by their screen circle. Safe to call after
  * cui_iso_end: the scene keeps the camera it was drawn with, so a click handler
  * can ask what was just drawn there. */
-CUI_API int cui_iso_pick(cui_iso_scene *s, float sx, float sy);
+CUI_ISO_API int cui_iso_pick(cui_iso_scene *s, float sx, float sy);
 
 /* ---- palette -------------------------------------------------------------
  *
@@ -305,7 +325,7 @@ typedef struct cui_iso_palette {
     cui_color info, accent;         /* data, emphasis */
 } cui_iso_palette;
 
-CUI_API cui_iso_palette cui_iso_palette_default(cui_ctx *ui);
+CUI_ISO_API cui_iso_palette cui_iso_palette_default(cui_ctx *ui);
 
 #ifdef __cplusplus
 }

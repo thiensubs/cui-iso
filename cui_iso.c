@@ -2,6 +2,14 @@
 #include "cui_iso.h"
 #include "cui_iso_internal.h"
 
+/* Two clip APIs from CUI that stock CUI does not have: the checked push, so a
+ * scene can clip without taking the caller's clip, and the current clip, so
+ * picking agrees with what was painted. A CUI without them fails here with a
+ * sentence, instead of at link time with a bare symbol name. */
+#if !defined(CUI_HAS_PUSH_CLIP_CHECKED) || !defined(CUI_HAS_CURRENT_CLIP)
+#error "cui-iso needs a CUI with cui_push_clip_checked() and cui_current_clip()"
+#endif
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -205,9 +213,13 @@ struct cui_iso_scene {
     bool reduced_motion;     /* freeze pulses at rest; CUI reduced-motion path */
     bool has_bounds;         /* set by cui_iso_set_bounds; else draw anywhere */
     cui_rect bounds;
+    /* The clip the last successful paint was drawn under: the scene's bounds
+     * intersected with the host's own clip. Picking has to use this and not
+     * the pending bounds: the pending bounds are a request, and what a click
+     * can hit is what was painted. */
+    bool has_painted_clip;
+    cui_rect painted_clip;
 };
-
-CUI_API void cui_iso_set_text_style(cui_iso_scene *s, cui_iso_text_style style);
 
 cui_iso_scene *cui_iso_scene_create(void) {
     cui_iso_scene *s = (cui_iso_scene *)calloc(1, sizeof *s);
@@ -224,8 +236,10 @@ void cui_iso_set_text_style(cui_iso_scene *s, cui_iso_text_style style) {
     if (!s) return;
     s->text = style;
     if (s->text.size <= 0.0f) s->text.size = 12.0f;
-    if (s->text.color.a == 0) s->text.color = CUI_COLOR_FOREGROUND;
-    if (s->text.value_color.a == 0) s->text.value_color = s->text.color;
+    /* The colours are kept as given. A theme token has alpha 0, so "alpha 0
+     * means unset" would throw the caller's token away; the draw pass resolves
+     * the token first and only then treats a still-transparent colour as
+     * unset. */
 }
 
 void cui_iso_set_light(cui_iso_scene *s, cui_iso_light light) {
@@ -534,7 +548,9 @@ void cui_iso_text(cui_iso_scene *s, float x, float y, float z,
     if (!o) return;
     o->cx = x; o->cy = y; o->z = z;
     o->label = text;
-    o->label_color = color.a ? color : s->text.color;
+    /* Kept as given, token or not: the draw pass resolves it and decides
+     * whether an unset colour falls back to the scene's text colour. */
+    o->label_color = color;
 }
 
 /* A triangular prism: a box whose top is a single ridge line running along the
@@ -587,6 +603,13 @@ static void cui_iso__draw_box(cui_ctx *ui, const cui_iso_camera *cam, const cui_
     float c = o->chamfer;
     float zt = o->z, zb = o->z - o->height;
 
+    /* A theme token is a sentinel, not a colour: its bytes are an id, so
+     * shading them as bytes turns the id into a literal RGB and leaves the
+     * alpha at 0 -- the face then vanishes, or leaks the id as a colour.
+     * Resolve first, then shade. */
+    cui_color top = cui_color_of(ui, o->top);
+    cui_color side = cui_color_of(ui, o->side);
+
     float wx[8] = { x0 + c, x1 - c, x1,     x1,     x1 - c, x0 + c, x0,     x0     };
     float wy[8] = { y0,     y0,     y0 + c, y1 - c, y1,     y1,     y1 - c, y0 + c };
 
@@ -621,17 +644,17 @@ static void cui_iso__draw_box(cui_ctx *ui, const cui_iso_camera *cam, const cui_
          * normal is ill-defined, so shade by the real edge normal instead. */
         float mx = (wx[i] + wx[j]) * 0.5f - o->cx;
         float my = (wy[i] + wy[j]) * 0.5f - o->cy;
-        cui_color side = cui_iso_shade(o->side, *light, mx, my);
+        cui_color face = cui_iso_shade(side, *light, mx, my);
         cui_vec2 q[4] = { t[i], t[j], b[j], b[i] };
-        cui_draw_polygon(ui, q, 4, side);
+        cui_draw_polygon(ui, q, 4, face);
     }
 
-    cui_draw_polygon(ui, t, 8, o->top);
+    cui_draw_polygon(ui, t, 8, top);
 
     cui_vec2 ring[9];
     for (int i = 0; i < 8; i++) ring[i] = t[i];
     ring[8] = t[0];
-    cui_color edge = o->top;
+    cui_color edge = top;
     edge.a = (uint8_t)(edge.a * CUI_ISO_EDGE_A + 0.5f);
     cui_draw_polyline(ui, ring, 9, CUI_ISO_EDGE_W, edge, false);
 }
@@ -648,7 +671,10 @@ static void cui_iso__draw_glass(cui_ctx *ui, const cui_iso_camera *cam, const cu
         cui_iso_project(cam, x1, y1, zb), cui_iso_project(cam, x0, y1, zb),
     };
 
-    cui_color tint = o->top;
+    /* Resolve the tint before it is faded: a token's bytes are an id, so
+     * fading them as bytes would leave the frame transparent and leak the id
+     * into the colour. */
+    cui_color tint = cui_color_of(ui, o->top);
     cui_draw_polygon(ui, (cui_vec2[]){ p[0], p[1], p[5], p[4] }, 4, tint);
     cui_draw_polygon(ui, (cui_vec2[]){ p[1], p[2], p[6], p[5] }, 4, tint);
     cui_draw_polygon(ui, (cui_vec2[]){ p[2], p[3], p[7], p[6] }, 4, tint);
@@ -670,13 +696,18 @@ static void cui_iso__draw_glass(cui_ctx *ui, const cui_iso_camera *cam, const cu
 static void cui_iso__draw_shadow(cui_ctx *ui, const cui_iso_camera *cam, const cui_iso_solid *o) {
     cui_vec2 c = cui_iso_project(cam, o->cx, o->cy, o->z);
 
+    /* Resolve first: a token is a sentinel with alpha 0, and "alpha 0 leaves
+     * the floor transparent" is about a literal colour. */
+    cui_color top = cui_color_of(ui, o->top);
+    cui_color side = cui_color_of(ui, o->side);
+
     /* chamfer==1 marks a ground grid rather than an elliptical blob */
     if (o->chamfer == 1.0f) {
         int cells = (int)o->w;
         float cell = o->d;
         if (cells > 0 && cell > 0.0f) {
             float half = (float)cells * cell * 0.5f;
-            if (o->top.a > 0) {
+            if (top.a > 0) {
                 /* floor slab as one filled diamond (the plane's footprint) */
                 cui_vec2 q[4] = {
                     cui_iso_project(cam, o->cx - half, o->cy - half, o->z),
@@ -684,16 +715,16 @@ static void cui_iso__draw_shadow(cui_ctx *ui, const cui_iso_camera *cam, const c
                     cui_iso_project(cam, o->cx + half, o->cy + half, o->z),
                     cui_iso_project(cam, o->cx - half, o->cy + half, o->z),
                 };
-                cui_draw_polygon(ui, q, 4, o->top);
+                cui_draw_polygon(ui, q, 4, top);
             }
             for (int i = 0; i <= cells; i++) {
                 float p = -half + (float)i * cell;
                 cui_vec2 a = cui_iso_project(cam, o->cx + p, o->cy - half, o->z);
                 cui_vec2 b = cui_iso_project(cam, o->cx + p, o->cy + half, o->z);
-                cui_draw_line(ui, a, b, 1.0f, o->side);
+                cui_draw_line(ui, a, b, 1.0f, side);
                 cui_vec2 c2 = cui_iso_project(cam, o->cx - half, o->cy + p, o->z);
                 cui_vec2 d2 = cui_iso_project(cam, o->cx + half, o->cy + p, o->z);
-                cui_draw_line(ui, c2, d2, 1.0f, o->side);
+                cui_draw_line(ui, c2, d2, 1.0f, side);
             }
         }
         return;
@@ -705,7 +736,7 @@ static void cui_iso__draw_shadow(cui_ctx *ui, const cui_iso_camera *cam, const c
         pts[i].x = c.x + cosf(a) * o->w;
         pts[i].y = c.y + sinf(a) * o->d;
     }
-    cui_draw_polygon(ui, pts, 24, o->top);
+    cui_draw_polygon(ui, pts, 24, top);
 }
 
 /* A vertical cylinder: a lit side (vertical strips, each its own normal) plus a
@@ -717,6 +748,11 @@ static void cui_iso__draw_cylinder(cui_ctx *ui, const cui_iso_camera *cam,
     if (sides < 8) sides = 8;
     if (sides > CUI_ISO_MAX_CYL_SIDES) sides = CUI_ISO_MAX_CYL_SIDES;
     float zb = o->z, zt = o->z + o->height;
+
+    /* Resolve before shading: a token is a sentinel, and shading its bytes
+     * turns the id into a colour and leaves the side transparent. */
+    cui_color top = cui_color_of(ui, o->top);
+    cui_color side = cui_color_of(ui, o->side);
 
     cui_vec2 tb[65], bb[65];
     for (int i = 0; i <= sides; i++) {
@@ -753,7 +789,7 @@ static void cui_iso__draw_cylinder(cui_ctx *ui, const cui_iso_camera *cam,
     for (int k = 0; k < sides; k++) {
         int i = order[k];
         float am = ((float)i + 0.5f) / (float)sides * 2.0f * CUI_PI;
-        cui_color c = cui_iso_shade(o->side, *light, cosf(am), sinf(am));
+        cui_color c = cui_iso_shade(side, *light, cosf(am), sinf(am));
         cui_vec2 q[4] = { tb[i], tb[i + 1], bb[i + 1], bb[i] };
         cui_draw_polygon(ui, q, 4, c);
     }
@@ -763,7 +799,7 @@ static void cui_iso__draw_cylinder(cui_ctx *ui, const cui_iso_camera *cam,
      * and every one of them is a seam where two triangles meet. */
     cui_vec2 cap[CUI_ISO_MAX_CYL_SIDES];
     for (int i = 0; i < sides; i++) cap[i] = tb[i];
-    cui_draw_polygon(ui, cap, sides, o->top);
+    cui_draw_polygon(ui, cap, sides, top);
 }
 
 /* A depth-sorted ball with a simple top-left highlight, so it reads as a sphere
@@ -771,11 +807,29 @@ static void cui_iso__draw_cylinder(cui_ctx *ui, const cui_iso_camera *cam,
 static void cui_iso__draw_sphere(cui_ctx *ui, const cui_iso_camera *cam, const cui_iso_solid *o) {
     cui_vec2 c = cui_iso_project(cam, o->cx, o->cy, o->z);
     float r = o->radius * cam->scale;
-    cui_draw_circle(ui, c, r, o->top);
+    /* Resolve before the highlight fades it: a token's alpha is 0, so fading
+     * the token's bytes would draw no highlight at all. */
+    cui_color top = cui_color_of(ui, o->top);
+    cui_draw_circle(ui, c, r, top);
     cui_vec2 hi = { c.x - r * CUI_ISO_SPHERE_HI_DX, c.y - r * CUI_ISO_SPHERE_HI_DY };
-    cui_color h = o->top;
+    cui_color h = top;
     h.a = (uint8_t)(h.a * CUI_ISO_SPHERE_HI_A + 0.5f);
     cui_draw_circle(ui, hi, r * CUI_ISO_SPHERE_HI_R, h);
+}
+
+/* The colour a caption is drawn in.
+ *
+ * A theme token is resolved first: its alpha is 0, and "alpha 0 means use the
+ * scene's colour" is about a literal colour, so resolving first is what keeps
+ * a caller's token from being read as unset. A colour that is still
+ * transparent after the resolution is unset: it falls back to the scene's text
+ * colour, and then to the foreground. */
+static cui_color iso__label_color(cui_ctx *ui, cui_color c,
+                                  const cui_iso_text_style *style) {
+    cui_color col = cui_color_of(ui, c);
+    if (col.a == 0) col = cui_color_of(ui, style->color);
+    if (col.a == 0) col = cui_color_of(ui, CUI_COLOR_FOREGROUND);
+    return col;
 }
 
 /* A caption anchored at a world point, centred on it. Drawn in the opaque pass
@@ -787,7 +841,8 @@ static void cui_iso__draw_text(cui_ctx *ui, const cui_iso_camera *cam,
     cui_text_metrics m = cui_measure_text(ui, text->font, text->size,
                                           o->label, (int)strlen(o->label));
     cui_vec2 at = { c.x - m.width * 0.5f, c.y - m.ascent * 0.5f };
-    cui_draw_text(ui, text->font, text->size, at, o->label_color,
+    cui_draw_text(ui, text->font, text->size, at,
+                  iso__label_color(ui, o->label_color, text),
                   o->label, (int)strlen(o->label));
 }
 
@@ -813,6 +868,11 @@ static void cui_iso__draw_wedge(cui_ctx *ui, const cui_iso_camera *cam,
     cui_vec2 r0 = cui_iso_project(cam, x0, o->cy, zr);
     cui_vec2 r1 = cui_iso_project(cam, x1, o->cy, zr);
 
+    /* Resolve before shading: a token is a sentinel, and shading its bytes
+     * turns the id into a colour and leaves the face transparent. */
+    cui_color top = cui_color_of(ui, o->top);
+    cui_color side = cui_color_of(ui, o->side);
+
     float ca, sa;
     cui_iso_basis(cam, &ca, &sa);
     float vx = ca + sa, vy = ca - sa;
@@ -820,27 +880,27 @@ static void cui_iso__draw_wedge(cui_ctx *ui, const cui_iso_camera *cam,
 
     /* roof face toward -y: normal (0, -height, half_d) */
     if (-o->height * vy + half_d > 0.0f) {
-        cui_color roof_neg = cui_iso_shade(o->top, *light, 0.0f, -0.85f);
+        cui_color roof_neg = cui_iso_shade(top, *light, 0.0f, -0.85f);
         cui_draw_polygon(ui, (cui_vec2[]){ b00, b10, r1, r0 }, 4, roof_neg);
     }
     /* roof face toward +y: normal (0, +height, half_d) */
     if (o->height * vy + half_d > 0.0f) {
-        cui_color roof_pos = cui_iso_shade(o->top, *light, 0.0f, 0.85f);
+        cui_color roof_pos = cui_iso_shade(top, *light, 0.0f, 0.85f);
         cui_draw_polygon(ui, (cui_vec2[]){ b01, b11, r1, r0 }, 4, roof_pos);
     }
 
     /* gable ends (triangles). Shade the -x and +x faces by their normals. */
     if (-vx > 0.0f) {
-        cui_color gable_neg = cui_iso_shade(o->side, *light, -1.0f, 0.0f);
+        cui_color gable_neg = cui_iso_shade(side, *light, -1.0f, 0.0f);
         cui_draw_polygon(ui, (cui_vec2[]){ b00, b01, r0 }, 3, gable_neg);
     }
     if (vx > 0.0f) {
-        cui_color gable_pos = cui_iso_shade(o->side, *light, 1.0f, 0.0f);
+        cui_color gable_pos = cui_iso_shade(side, *light, 1.0f, 0.0f);
         cui_draw_polygon(ui, (cui_vec2[]){ b10, b11, r1 }, 3, gable_pos);
     }
 
     /* ridge highlight */
-    cui_color ridge = o->top;
+    cui_color ridge = top;
     ridge.a = (uint8_t)(ridge.a * 0.5f + 0.5f);
     cui_draw_line(ui, r0, r1, 1.4f, ridge);
 }
@@ -853,7 +913,11 @@ static void cui_iso__draw_link(cui_ctx *ui, const cui_iso_camera *cam,
     cui_vec2 a = cui_iso_project(cam, o->cx, o->cy, o->z);
     cui_vec2 b = cui_iso_project(cam, o->x2, o->y2, o->z2);
     float t = o->radius;
-    cui_color glow = o->side, body = o->side, core = o->side;
+    /* Resolve before the strand is layered: a token's alpha is 0, so fading
+     * the token's bytes drops the glow and the body, and the core would be
+     * painted in the token's id bytes. */
+    cui_color col = cui_color_of(ui, o->side);
+    cui_color glow = col, body = col, core = col;
     glow.a = (uint8_t)(glow.a * CUI_ISO_STRAND_GLOW_A + 0.5f);
     body.a = (uint8_t)(body.a * CUI_ISO_STRAND_BODY_A + 0.5f);
     core.a = CUI_ISO_STRAND_CORE_A;
@@ -888,13 +952,15 @@ static void cui_iso__draw_link_label(cui_ctx *ui, const cui_iso_camera *cam,
      * asked to carry none. */
     if (o->label_value >= 0.0f && o->label_decimals >= 0)
         snprintf(val, sizeof val, "%.*f", o->label_decimals, o->label_value);
-    cui_draw_text(ui, text->font, text->size, m, o->label_color,
+    cui_draw_text(ui, text->font, text->size, m,
+                  iso__label_color(ui, o->label_color, text),
                   o->label, (int)strlen(o->label));
     if (val[0]) {
         cui_text_metrics lm = cui_measure_text(ui, text->font, text->size,
                                                o->label, (int)strlen(o->label));
         cui_vec2 vp = { m.x + lm.width + 5.0f, m.y };
-        cui_draw_text(ui, text->font, text->size, vp, text->value_color,
+        cui_draw_text(ui, text->font, text->size, vp,
+                      iso__label_color(ui, text->value_color, text),
                       val, (int)strlen(val));
     }
 }
@@ -920,7 +986,11 @@ static void cui_iso__draw_arc(cui_ctx *ui, const cui_iso_camera *cam,
         path[i].x = v * v * a.x + 2.0f * v * u * ctrl.x + u * u * b.x;
         path[i].y = v * v * a.y + 2.0f * v * u * ctrl.y + u * u * b.y;
     }
-    cui_color glow = o->side, body = o->side, core = o->side;
+    /* Resolve before the strand is layered: a token's alpha is 0, so fading
+     * the token's bytes drops the glow and the body, and the core would be
+     * painted in the token's id bytes. */
+    cui_color col = cui_color_of(ui, o->side);
+    cui_color glow = col, body = col, core = col;
     glow.a = (uint8_t)(glow.a * CUI_ISO_STRAND_GLOW_A + 0.5f);
     body.a = (uint8_t)(body.a * CUI_ISO_STRAND_BODY_A + 0.5f);
     core.a = CUI_ISO_STRAND_CORE_A;
@@ -978,6 +1048,13 @@ void cui_iso_end(cui_iso_scene *s, cui_ctx *ui) {
             return;
         }
     }
+    /* The clip that is really in effect: the scene's bounds intersected with
+     * the host's own clip. Picking has to agree with it, or a click lands on
+     * a solid the host clipped away. It is recorded here, after a successful
+     * push: a refused push painted nothing, so the last frame's clip is still
+     * the truth about what is on screen. */
+    s->painted_clip = cui_current_clip(ui);
+    s->has_painted_clip = true;
 
     /* The ground first: shadows and the grid are a floor, never occluders. */
     for (int i = 0; i < s->count; i++)
@@ -1295,11 +1372,19 @@ static bool iso__hit_box_volume(const cui_iso_camera *cam, float sx, float sy,
 
 int cui_iso_pick(cui_iso_scene *s, float sx, float sy) {
     if (!s) return -1;
-    /* cui_iso_end clips drawing to the bounds, so picking must agree with what
-     * was painted: a click outside them selects nothing. A solid that is only
-     * partly clipped stays selectable on its visible part, because the test
-     * rejects the point, not the solid. */
-    if (s->has_bounds) {
+    /* Picking answers about the pixels that were painted, so it uses the clip
+     * of the last successful paint -- the scene's bounds intersected with the
+     * host's own clip. A click outside it selects nothing; a solid that is
+     * only partly clipped stays selectable on its visible part, because the
+     * test rejects the point, not the solid.
+     *
+     * The pending bounds are only a fallback, for a scene that has never been
+     * painted. Changing the bounds after a paint does not change what is on
+     * screen, so it must not change what a click selects either. */
+    if (s->has_painted_clip) {
+        cui_rect r = s->painted_clip;
+        if (sx < r.x || sy < r.y || sx > r.x + r.w || sy > r.y + r.h) return -1;
+    } else if (s->has_bounds) {
         cui_rect r = s->bounds;
         if (sx < r.x || sy < r.y || sx > r.x + r.w || sy > r.y + r.h) return -1;
     }
