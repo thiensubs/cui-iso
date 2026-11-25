@@ -1,21 +1,35 @@
 diff --git a/include/cui/cui.h b/include/cui/cui.h
-index 5fc788f..ba7939a 100644
+index 6c9495f..30b018b 100644
 --- a/include/cui/cui.h
 +++ b/include/cui/cui.h
-@@ -4236,6 +4236,11 @@ CUI_API void cui_draw_text(cui_ctx *ui, cui_font font, float size, cui_vec2 pos,
+@@ -5078,7 +5078,25 @@ CUI_API void cui_draw_arc(cui_ctx *ui, cui_vec2 center, float radius, float a0,
+ CUI_API void cui_draw_text(cui_ctx *ui, cui_font font, float size, cui_vec2 pos, cui_color color, const char *text, int len);
  CUI_API void cui_draw_icon(cui_ctx *ui, const char *icon, cui_rect r, float size, cui_color color);
  CUI_API void cui_draw_image(cui_ctx *ui, cui_texture tex, cui_rect r, cui_rect uv, cui_corners radius, cui_color tint);
++/* Capabilities. A consumer that needs one of these has to be able to tell
++ * whether the CUI it found has it: the version number does not say, because a
++ * patch release can add one. */
++#define CUI_HAS_PUSH_CLIP_CHECKED 1
++#define CUI_HAS_CURRENT_CLIP 1
++
  CUI_API void cui_push_clip(cui_ctx *ui, cui_rect r);
 +/* Pushes a clip and reports whether it was applied. The clip stack is 64 deep;
 + * past that a push is refused, and the matching pop would then remove the
 + * caller's own clip. Use this when the push may fail: on false the clip was
 + * NOT applied, so do not call cui_pop_clip for it. */
 +CUI_API bool cui_push_clip_checked(cui_ctx *ui, cui_rect r);
++/* The clip in effect right now, in the same coordinate space cui_push_clip
++ * takes: the whole viewport when nothing has been pushed, and from then on the
++ * intersection with the clip already on the stack. A consumer that has to
++ * agree with what CUI painted -- hit testing, for one -- needs this, because
++ * the clip that decides is the intersection of every clip on the stack and a
++ * clip the consumer never pushed is invisible from the outside. */
++CUI_API cui_rect cui_current_clip(cui_ctx *ui);
  CUI_API void cui_pop_clip(cui_ctx *ui);
  
  /* Canvas: a box of the given size that you paint yourself. The callback
 diff --git a/src/cui_draw.c b/src/cui_draw.c
-index 0a491bb..ec59fd1 100644
+index bbee2a9..981f62b 100644
 --- a/src/cui_draw.c
 +++ b/src/cui_draw.c
 @@ -60,7 +60,7 @@ static inline cui_color cui__xa(cui_color c, float a) {
@@ -27,7 +41,7 @@ index 0a491bb..ec59fd1 100644
      cui_draw_list *dl = &ui->dl;
      cui_xform x = cui__xf(ui);
      float s = ui->scale;
-@@ -69,9 +69,13 @@ void cui_push_clip(cui_ctx *ui, cui_rect r) {
+@@ -69,7 +69,22 @@ void cui_push_clip(cui_ctx *ui, cui_rect r) {
      float x0 = floorf(px.x), y0 = floorf(px.y), x1 = ceilf(px.x + px.w), y1 = ceilf(px.y + px.h);
      px.x = x0; px.y = y0; px.w = x1 - x0; px.h = y1 - y0;
      cui_rect cur = dl->clip_stack[dl->clip_depth - 1];
@@ -35,10 +49,19 @@ index 0a491bb..ec59fd1 100644
 +    if (dl->clip_depth >= 64) return false;
 +    dl->clip_stack[dl->clip_depth++] = cui__rect_intersect(cur, px);
 +    return true;
- }
- 
++}
++
 +void cui_push_clip(cui_ctx *ui, cui_rect r) { (void)cui_push_clip_checked(ui, r); }
 +
- void cui_pop_clip(cui_ctx *ui) { if (ui->dl.clip_depth > 1) ui->dl.clip_depth--; }
++cui_rect cui_current_clip(cui_ctx *ui) {
++    if (!ui) return (cui_rect){ 0, 0, 0, 0 };
++    cui_draw_list *dl = &ui->dl;
++    cui_rect px = dl->clip_stack[dl->clip_depth - 1];
++    /* The stack is in pixels and the callers' coordinates are in logical units.
++     * Dividing by the scale is the conversion CUI's own hit testing uses. */
++    float s = ui->scale > 0.0f ? ui->scale : 1.0f;
++    cui_rect r = { px.x / s, px.y / s, px.w / s, px.h / s };
++    return r;
+ }
  
- static void cui__set_texture(cui_ctx *ui, cui_texture t) { ui->dl.cur_tex = t; }
+ void cui_pop_clip(cui_ctx *ui) { if (ui->dl.clip_depth > 1) ui->dl.clip_depth--; }
