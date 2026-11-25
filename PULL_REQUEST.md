@@ -29,7 +29,8 @@ control surfaces and status scenes.
 
 ## What this PR changes in CUI itself
 
-Two files, 35 lines added, nothing removed or changed in behaviour:
+Two files, 35 lines added and 2 changed: `cui_push_clip` keeps its behaviour and
+forwards to the new `cui_push_clip_checked`.
 
 - `include/cui/cui.h` declares `cui_push_clip_checked` and `cui_current_clip`,
   and two capability macros, `CUI_HAS_PUSH_CLIP_CHECKED` and
