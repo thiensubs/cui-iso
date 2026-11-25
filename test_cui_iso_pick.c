@@ -208,6 +208,128 @@ static int chamfered_box_pick(void) {
     return 1;
 }
 
+/* A context with a software renderer, for the tests that need a real paint:
+ * the clip a scene was painted under is only known once a frame was drawn. */
+typedef struct { cui_sw_renderer *sw; cui_ctx *ui; } env;
+
+static void env_make(env *e) {
+    e->sw = cui_sw_create();
+    e->ui = cui_create(&(cui_ctx_desc){ .renderer = cui_sw_iface(e->sw),
+                                         .theme = CUI_THEME_DARK });
+    cui_set_viewport(e->ui, W, H, 1.0f);
+}
+
+static void env_free(env *e) {
+    cui_destroy(e->ui);
+    cui_sw_destroy(e->sw);
+}
+
+/* Picking answers about the pixels that were painted, so it uses the clip of
+ * the last successful paint. The bounds a caller sets after that paint are a
+ * request for the next frame: they do not change what is on screen, and they
+ * must not change what a click selects either. */
+static int painted_clip_is_what_pick_uses(void) {
+    env e;
+    env_make(&e);
+    cui_iso_scene *sc = cui_iso_scene_create();
+
+    /* Paint the box with bounds that cut it in half: only the part left of
+     * x = 130 reaches the screen. */
+    cui_iso_set_bounds(sc, (cui_rect){ 0, 0, 130, (float)H });
+    cui_begin_frame(e.ui, 1.0f / 60.0f);
+    cui_iso_begin(sc, &CAM);
+    cui_iso_box(sc, 0, 0, 0, 80, 80, 60, 12,
+                CUI_RGB(0xffffff), CUI_RGB(0xffffff));
+    cui_iso_end(sc, e.ui);
+    cui_end_frame(e.ui);
+
+    /* The right half of the box is painted away, so a click there selects
+     * nothing; the left half is on the screen, so a click there selects the
+     * box. */
+    cui_vec2 right = cui_iso_project(&CAM, 25.0f, 0.0f, 0.0f);
+    cui_vec2 left = cui_iso_project(&CAM, -25.0f, 0.0f, 0.0f);
+    int ok = 1;
+    if (cui_iso_pick(sc, right.x, right.y) >= 0) {
+        fprintf(stderr, "FAIL painted clip: a click on the part the bounds "
+                        "clipped away selected a solid\n");
+        ok = 0;
+    }
+    if (cui_iso_pick(sc, left.x, left.y) < 0) {
+        fprintf(stderr, "FAIL painted clip: a click on the visible part "
+                        "selected nothing\n");
+        ok = 0;
+    }
+
+    /* Widening the bounds after the paint is a request for the next frame.
+     * The pixels have not moved, so the click that hit nothing must still hit
+     * nothing. */
+    cui_iso_set_bounds(sc, (cui_rect){ 0, 0, (float)W, (float)H });
+    if (cui_iso_pick(sc, right.x, right.y) >= 0) {
+        fprintf(stderr, "FAIL painted clip: widening the bounds after the "
+                        "paint made a clipped-away solid selectable\n");
+        ok = 0;
+    }
+
+    /* The other way round: paint the box whole, then narrow the bounds. The
+     * solid that is on the screen stays selectable. */
+    cui_begin_frame(e.ui, 1.0f / 60.0f);
+    cui_iso_begin(sc, &CAM);
+    cui_iso_box(sc, 0, 0, 0, 80, 80, 60, 12,
+                CUI_RGB(0xffffff), CUI_RGB(0xffffff));
+    cui_iso_end(sc, e.ui);
+    cui_end_frame(e.ui);
+    cui_iso_set_bounds(sc, (cui_rect){ 0, 0, 60, (float)H });
+    if (cui_iso_pick(sc, right.x, right.y) < 0) {
+        fprintf(stderr, "FAIL painted clip: narrowing the bounds after the "
+                        "paint took away a solid that is on the screen\n");
+        ok = 0;
+    }
+
+    cui_iso_scene_destroy(sc);
+    env_free(&e);
+    if (ok) printf("ok   painted clip: picking follows the paint, not the "
+                   "bounds set afterwards\n");
+    return ok;
+}
+
+/* The host's own clip decides what reaches the screen, so picking has to
+ * agree with it: a click on a solid the host clipped away selects nothing,
+ * and a click on the part that is visible still selects it. */
+static int host_clip_is_respected(void) {
+    env e;
+    env_make(&e);
+    cui_iso_scene *sc = cui_iso_scene_create();
+
+    /* the host clips the paint to the left half of the viewport */
+    cui_begin_frame(e.ui, 1.0f / 60.0f);
+    cui_push_clip(e.ui, (cui_rect){ 0, 0, 130, (float)H });
+    cui_iso_begin(sc, &CAM);
+    cui_iso_box(sc, 0, 0, 0, 80, 80, 60, 12,
+                CUI_RGB(0xffffff), CUI_RGB(0xffffff));
+    cui_iso_end(sc, e.ui);
+    cui_pop_clip(e.ui);
+    cui_end_frame(e.ui);
+
+    cui_vec2 right = cui_iso_project(&CAM, 25.0f, 0.0f, 0.0f);
+    cui_vec2 left = cui_iso_project(&CAM, -25.0f, 0.0f, 0.0f);
+    int ok = 1;
+    if (cui_iso_pick(sc, right.x, right.y) >= 0) {
+        fprintf(stderr, "FAIL host clip: a click on the part the host "
+                        "clipped away selected a solid\n");
+        ok = 0;
+    }
+    if (cui_iso_pick(sc, left.x, left.y) < 0) {
+        fprintf(stderr, "FAIL host clip: a click on the visible part "
+                        "selected nothing\n");
+        ok = 0;
+    }
+
+    cui_iso_scene_destroy(sc);
+    env_free(&e);
+    if (ok) printf("ok   host clip: picking agrees with the host's clip\n");
+    return ok;
+}
+
 int main(void) {
     long p, d, f;
     int ok = 1;
@@ -219,5 +341,7 @@ int main(void) {
     ok &= bounds_respected(sc);
     cui_iso_scene_destroy(sc);
     ok &= chamfered_box_pick();
+    ok &= painted_clip_is_what_pick_uses();
+    ok &= host_clip_is_respected();
     return ok ? 0 : 1;
 }
