@@ -1,0 +1,142 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# a newer push to the same branch makes the older run redundant
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cui-iso:
+    name: cui-iso (${{ matrix.cc }}, ASan + UBSan)
+    timeout-minutes: 45
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libgl-dev
+
+      # The extension needs two clip APIs from CUI that stock CUI does not have
+      # yet. The patch shipped in this repository adds them to a CUI checkout;
+      # applying it here also proves that the patch still applies to CUI master.
+      - name: Check out CUI and apply the clip API patch
+        run: |
+          git clone --depth 1 https://github.com/yappologistic/CUI.git cui
+          git -C cui apply "$GITHUB_WORKSPACE/patches/cui-iso-clip-api.patch"
+
+      - name: Build and install CUI
+        run: |
+          cmake -S cui -B cui/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/cui-prefix"
+          cmake --build cui/build
+          cmake --install cui/build
+
+      # The extension finds CUI with find_package(cui), the way a consumer
+      # installs it.
+      - name: Configure the extension against the installed CUI
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=${{ matrix.cc }} \
+            -DCUI_ISO_SANITIZE=ON \
+            -DCMAKE_PREFIX_PATH="$PWD/cui-prefix"
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Tests
+        run: ctest --test-dir build --output-on-failure
+
+      # An installed CUI without the clip APIs must be refused with a sentence,
+      # not a link error.
+      - name: The extension refuses an installed CUI without the clip APIs
+        run: |
+          set -eu
+
+          mkdir -p iso-fake-old/include/cui iso-fake-old/lib/cmake/cui
+          {
+              echo 'add_library(cui::cui INTERFACE IMPORTED)'
+              echo 'set_target_properties(cui::cui PROPERTIES'
+              echo "    INTERFACE_INCLUDE_DIRECTORIES \"$PWD/iso-fake-old/include\")"
+              echo 'set(cui_FOUND TRUE)'
+          } > iso-fake-old/lib/cmake/cui/cuiConfig.cmake
+          printf 'int cui_push_clip(void);\n' > iso-fake-old/include/cui/cui.h
+
+          if cmake -S . -B build-fake -G Ninja \
+                  -DCMAKE_PREFIX_PATH="$PWD/cui-prefix" \
+                  -Dcui_DIR="$PWD/iso-fake-old/lib/cmake/cui" > build-fake.log 2>&1; then
+              echo "::error::the extension accepted a CUI without the clip APIs"
+              exit 1
+          fi
+          grep -q "missing a clip API" build-fake.log
+          echo "the extension refuses an installed CUI without the clip APIs"
+
+      # The installed package checks again, and the check has to read the CUI
+      # that was found now: find_file caches its result, so a stale header would
+      # let this configure pass.
+      - name: The installed package refuses a CUI without the clip APIs
+        run: |
+          set -eu
+
+          prefix="$PWD/iso-prefix"
+          cmake --install build --prefix "$prefix"
+
+          for kind in good old; do
+              mkdir -p "iso-fake-$kind/include/cui" "iso-fake-$kind/lib/cmake/cui"
+              {
+                  echo 'add_library(cui::cui INTERFACE IMPORTED)'
+                  echo 'set_target_properties(cui::cui PROPERTIES'
+                  echo "    INTERFACE_INCLUDE_DIRECTORIES \"$PWD/iso-fake-$kind/include\")"
+                  echo 'set(cui_FOUND TRUE)'
+              } > "iso-fake-$kind/lib/cmake/cui/cuiConfig.cmake"
+          done
+
+          printf 'int cui_push_clip_checked(void);\nint cui_current_clip(void);\n' > iso-fake-good/include/cui/cui.h
+          printf 'int cui_push_clip(void);\n' > iso-fake-old/include/cui/cui.h
+
+          mkdir -p iso-consumer
+          {
+              echo 'cmake_minimum_required(VERSION 3.14)'
+              echo 'project(iso_consumer LANGUAGES C)'
+              echo 'find_package(cui_iso CONFIG REQUIRED)'
+          } > iso-consumer/CMakeLists.txt
+
+          cmake -S iso-consumer -B iso-consumer-build \
+              -DCMAKE_PREFIX_PATH="$prefix" \
+              -Dcui_DIR="$PWD/iso-fake-good/lib/cmake/cui"
+
+          if cmake -S iso-consumer -B iso-consumer-build \
+                  -DCMAKE_PREFIX_PATH="$prefix" \
+                  -Dcui_DIR="$PWD/iso-fake-old/lib/cmake/cui" > iso-consumer-old.log 2>&1; then
+              echo "::error::the installed package accepted a CUI without the clip APIs"
+              exit 1
+          fi
+          grep -q "does not have them" iso-consumer-old.log
+          echo "the installed package refuses a CUI without the clip APIs"
+
+      - name: Examples must need no private header
+        run: |
+          for f in examples/top10.c examples/pipeline.c; do
+            ${{ matrix.cc }} -std=c99 -Wall -Wextra -Werror -fsyntax-only \
+              -Iinclude -Icui/include "$f"
+          done
+
+      - name: Public headers compile standalone
+        run: |
+          for h in cui_iso.h cui_iso_opts.h; do
+            printf '#include <cui/%s>\nint main(void) { return 0; }\n' "$h" \
+              | ${{ matrix.cc }} -std=c99 -Wall -Wextra -Werror -fsyntax-only \
+                  -x c -Iinclude -Icui/include -
+            printf '#include <cui/%s>\nint main() { return 0; }\n' "$h" \
+              | ${{ matrix.cc }} -std=c++11 -Wall -Wextra -Werror -fsyntax-only \
+                  -x c++ -Iinclude -Icui/include -
+          done

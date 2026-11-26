@@ -11,6 +11,9 @@ It is the first CUI extension to give you depth. CUI itself has no depth
 buffer and no 3D API; the closest you could get was stacking flat polygons
 by hand.
 
+This is the extension's own repository, not a directory inside CUI. It is a
+CMake package that finds CUI with `find_package(cui)` and links `cui::cui`.
+
 ## Why it exists
 
 CUI gives you `cui_draw_polygon`, `cui_draw_polyline`, `cui_draw_circle`
@@ -260,9 +263,28 @@ exported package points there.
 Include `<cui/cui_iso.h>` for the scene, camera and helpers, and
 `<cui/cui_iso_opts.h>` for the named-field solids.
 
-`cui-iso` finds CUI on its own when it sits inside a CUI checkout (the
-`extensions/cui-iso` layout) or beside a vendored one (`../vendor/CUI`).
-Otherwise configure with `-DCUI_ISO_CUI_DIR=/path/to/the/CUI/source/tree`.
+### Finding CUI
+
+`cui-iso` needs CUI, and it looks for it in this order:
+
+1. a CUI the host app already has — the `cui::cui` target CUI makes in its
+   own tree, or an imported package from `find_package(cui)`;
+2. the CUI source tree that `-DCUI_ISO_CUI_DIR=<path>` points at;
+3. an installed CUI, found with `find_package(cui)` — the normal way for a
+   consumer, after CUI has been installed;
+4. a vendored CUI checkout beside the extension (`../vendor/CUI`), or the
+   tree two directories up (the extension inside a CUI checkout).
+
+So a consumer who has CUI installed only has to point CMake at the prefix:
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/cui-install
+```
+
+`-DCUI_ISO_FIND_INSTALLED_CUI=OFF` turns step 3 off, and
+`-DCUI_ISO_CUI_DIR=<path>` always wins over an installed CUI.
+
+### The two clip APIs
 
 Two symbols are required from CUI: `cui_push_clip_checked`, the clip push that
 reports whether the clip stack had room, and `cui_current_clip`, which reports
@@ -270,16 +292,21 @@ the clip that is really in effect. A scene with bounds cannot be clipped
 safely without the first, and picking cannot agree with what was painted
 without the second, so link against a CUI that has both. Two ways to get them:
 
-- a CUI that already carries them (upstream PR #129 adds both to CUI), or
+- a CUI that already carries them — upstream pull request
+  [yappologistic/CUI#137](https://github.com/yappologistic/CUI/pull/137) adds
+  both to CUI, and
 - the patch shipped here, applied inside the CUI source tree:
 
 ```sh
 cd /path/to/CUI && git apply /path/to/cui-iso/patches/cui-iso-clip-api.patch
 ```
 
-The configure step checks for the symbols and stops with that instruction
-instead of letting the build fail at link time, and the installed package
-checks again: `find_package(cui_iso)` refuses a CUI without them.
+The patch is the same diff as that pull request, so the two never drift apart.
+
+CUI has no capability macros, so the check is a read of the header of the CUI
+that was found: the configure step stops with that instruction instead of
+letting the build fail at link time, and the installed package checks again:
+`find_package(cui_iso)` refuses a CUI without them.
 
 The extension has its own export macro, `CUI_ISO_API`, and does not use CUI's
 `CUI_API`. That matters on Windows: a consumer of a shared CUI reads every

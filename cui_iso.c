@@ -4,11 +4,13 @@
 
 /* Two clip APIs from CUI that stock CUI does not have: the checked push, so a
  * scene can clip without taking the caller's clip, and the current clip, so
- * picking agrees with what was painted. A CUI without them fails here with a
- * sentence, instead of at link time with a bare symbol name. */
-#if !defined(CUI_HAS_PUSH_CLIP_CHECKED) || !defined(CUI_HAS_CURRENT_CLIP)
-#error "cui-iso needs a CUI with cui_push_clip_checked() and cui_current_clip()"
-#endif
+ * picking agrees with what was painted.
+ *
+ * CUI has no capability macros, so the check that these two are there is made
+ * where the CUI is found: the build reads the header of the CUI it found and
+ * stops with a sentence if the two names are not in it (CMakeLists.txt). Here
+ * they are simply used, and a CUI without them fails to compile with their
+ * names in the error. */
 
 #include <math.h>
 #include <stdio.h>

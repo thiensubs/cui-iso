@@ -182,10 +182,33 @@ real and it is fixed.
   prove that the library a consumer links at run time is the same one.
 - The proof was run here: two stand-in CUI installs whose headers differ in
   the two symbols, and the real installed package. The same two-step configure
-  is now a CI step in the pull request's workflow (`cui-iso`, gcc and clang on
-  ubuntu): it installs the package and fails if the second configure passes.
-  This repository has no workflow of its own, so the gate lives with the
-  extension, in the pull request. The Windows build was not exercised for this
-  row.
+  is now a CI step in this repository's own workflow (`cui-iso`, gcc and clang
+  on ubuntu): it installs the package and fails if the second configure passes.
+  The Windows build was not exercised for this row.
 - Reverting the fix is caught by the same two-step configure. It is not a
   proof that no other stale-cache path remains.
+
+## Review pass 5: the split (upstream owner's review)
+
+The owner of CUI read the pull request and asked for three changes: the
+install fix as its own small pull request, the clip API as its own pull
+request with tests and without capability macros, the workflow changes as
+their own pull request, and the extension itself in a repository of its own
+that finds CUI with `find_package(cui)`. This pass is that split.
+
+| # | Finding | Resolution |
+|---|---------|------------|
+| 1 | The pull request carried three unrelated changes at once: the install fix, the clip API with its capability macros, and the workflow action bumps. The owner asked for each on its own. | Three pull requests off CUI master: #135 (the install fix, one file), #137 (the clip API, with `test_clip_api` in `tests/test_main.c`), #136 (the workflow bumps). The extension lives in this repository. |
+| 2 | The clip API came with `CUI_HAS_PUSH_CLIP_CHECKED` and `CUI_HAS_CURRENT_CLIP`, and the owner would rather settle the capability-macro convention on its own than as a side effect of an extension. | The macros are gone, from CUI (`#137`) and from here (`cui_iso.c` has no `#error` guard any more). The one gate is a read of the header of the CUI that was found: `CMakeLists.txt` at configure time, `cmake/cui_isoConfig.cmake.in` in the installed package. |
+| 3 | The extension could only be built against a CUI source tree (`CUI_ISO_CUI_DIR`, a vendored checkout, or the tree two directories up). An installed CUI could not be used, which is the way a consumer has CUI. | `find_package(cui)` is now part of the search: a host target first, then `-DCUI_ISO_CUI_DIR`, then an installed CUI, then the vendored checkout. The clip API check reads the header of whichever CUI was found, including the include directory an installed package exports. |
+
+### What this pass does not claim
+- The installed-CUI path was proven here by installing CUI to a prefix and
+  configuring the extension against it with `-DCMAKE_PREFIX_PATH`. The CI
+  workflow does the same on every push; the Windows build was not exercised.
+- The header scan is a text search for the two names. It says the CUI that was
+  found has the two functions; it does not prove the library linked at run time
+  is the same one.
+- The patch in `patches/` is generated from the same diff as upstream #137. If
+  CUI master moves, the patch may no longer apply; CI applies it to CUI master
+  on every push, so a drift shows up there.

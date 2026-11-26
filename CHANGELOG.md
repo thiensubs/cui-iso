@@ -14,6 +14,18 @@
   filling a `*_opts` struct with fields as named arguments.
 - Slots: `cui_iso_layout_row`, `_ring`, `_grid`, `cui_iso_on`, `cui_iso_link_between`.
 
+### Changed
+- The extension now lives in its own repository and finds CUI with
+  `find_package(cui)`: an installed CUI is used when there is one, a CUI
+  source tree can still be named with `-DCUI_ISO_CUI_DIR`, and
+  `-DCUI_ISO_FIND_INSTALLED_CUI=OFF` turns the search off.
+- CUI has no capability macros, so `CUI_HAS_PUSH_CLIP_CHECKED` and
+  `CUI_HAS_CURRENT_CLIP` are gone. The two clip APIs are checked by reading
+  the header of the CUI that was found, at configure time and again in the
+  installed package.
+- `patches/cui-iso-clip-api.patch` is now the same diff as upstream pull
+  request yappologistic/CUI#137: the two functions and their test, no macros.
+
 ### Fixed
 - Solids were drawn in insertion order despite the header and README saying
   they were sorted back to front. `cui_iso_end` sorts now.

@@ -15,40 +15,68 @@ if(CUI_ISO_SANITIZE AND NOT MSVC)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
-# Where CUI lives. Two layouts are found without any -D:
-#   - a vendored CUI checkout beside the extension (../vendor/CUI);
-#   - this extension inside a CUI checkout (extensions/cui-iso), where the CUI
-#     source tree is two directories up.
-# The vendored path is tried first: two directories up can be any workspace, and
-# a workspace that happens to hold a CMakeLists.txt is not a CUI checkout.
-# A standalone consumer points CUI_ISO_CUI_DIR at its own CUI checkout instead.
+# Where CUI comes from, in this order:
+#   - a CUI the host app already has (the alias CUI makes in its own tree, or
+#     an imported package from find_package(cui));
+#   - the CUI source tree CUI_ISO_CUI_DIR points at;
+#   - an installed CUI, found with find_package(cui);
+#   - a vendored CUI checkout beside the extension (../vendor/CUI), or the
+#     tree two directories up (the extension inside a CUI checkout).
+# A consumer that wants a specific CUI points CUI_ISO_CUI_DIR at it; a
+# consumer that has CUI installed gets it through find_package(cui), the way
+# the CUI maintainer asked for.
+if(DEFINED CACHE{CUI_ISO_CUI_DIR})
+    set(_cui_iso_cui_dir_given TRUE)
+else()
+    set(_cui_iso_cui_dir_given FALSE)
+endif()
 set(CUI_ISO_CUI_DIR "" CACHE PATH
     "Path to the CUI source tree whose CMake target this library links")
-if(NOT CUI_ISO_CUI_DIR)
-    foreach(_cui_iso_cui_candidate
-            "${CMAKE_CURRENT_SOURCE_DIR}/../vendor/CUI"
-            "${CMAKE_CURRENT_SOURCE_DIR}/../..")
-        if(EXISTS "${_cui_iso_cui_candidate}/CMakeLists.txt")
-            set(CUI_ISO_CUI_DIR "${_cui_iso_cui_candidate}" CACHE PATH
-                "Path to the CUI source tree whose CMake target this library links"
-                FORCE)
-            break()
-        endif()
-    endforeach()
-endif()
-# The CUI this extension links against. If the host app already has a
-# cui::cui target -- the alias CUI makes in its own tree, or an imported
-# package from find_package(cui) -- that one is used and the CUI source tree
-# is not configured a second time: a second add_subdirectory would run
-# add_library(cui ...) twice, and CMake refuses to create the same target
-# twice. So the source tree is only added when there is no target to reuse.
+option(CUI_ISO_FIND_INSTALLED_CUI
+    "Look for an installed CUI with find_package(cui) when no CUI source tree is given" ON)
+
+# The CUI this extension links against. If there is a cui::cui target already
+# -- the alias CUI makes in its own tree, or an imported package from
+# find_package(cui) -- that one is used and no CUI is configured a second
+# time: a second add_subdirectory would run add_library(cui ...) twice, and
+# CMake refuses to create the same target twice. So the source tree is only
+# added when there is no target to reuse.
 if(TARGET cui::cui)
     set(CUI_ISO_USE_HOST_CUI TRUE)
+elseif(_cui_iso_cui_dir_given)
+    set(CUI_ISO_USE_HOST_CUI FALSE)
+elseif(CUI_ISO_FIND_INSTALLED_CUI)
+    find_package(cui CONFIG QUIET)
+    if(TARGET cui::cui)
+        set(CUI_ISO_USE_HOST_CUI TRUE)
+    else()
+        set(CUI_ISO_USE_HOST_CUI FALSE)
+    endif()
 else()
     set(CUI_ISO_USE_HOST_CUI FALSE)
+endif()
+
+if(NOT CUI_ISO_USE_HOST_CUI)
+    if(NOT CUI_ISO_CUI_DIR)
+        # Two layouts are found without any -D: a vendored CUI checkout beside
+        # the extension, and this extension inside a CUI checkout, where the CUI
+        # source tree is two directories up. The vendored path is tried first:
+        # two directories up can be any workspace, and a workspace that happens
+        # to hold a CMakeLists.txt is not a CUI checkout.
+        foreach(_cui_iso_cui_candidate
+                "${CMAKE_CURRENT_SOURCE_DIR}/../vendor/CUI"
+                "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+            if(EXISTS "${_cui_iso_cui_candidate}/CMakeLists.txt")
+                set(CUI_ISO_CUI_DIR "${_cui_iso_cui_candidate}" CACHE PATH
+                    "Path to the CUI source tree whose CMake target this library links"
+                    FORCE)
+                break()
+            endif()
+        endforeach()
+    endif()
     if(NOT EXISTS "${CUI_ISO_CUI_DIR}/CMakeLists.txt")
         message(FATAL_ERROR
-            "CUI not found at '${CUI_ISO_CUI_DIR}'. Set -DCUI_ISO_CUI_DIR=<path to the CUI source tree>.")
+            "CUI not found. Install CUI so that find_package(cui) finds it, or set -DCUI_ISO_CUI_DIR=<path to the CUI source tree>.")
     endif()
     get_filename_component(CUI_ISO_CUI_DIR "${CUI_ISO_CUI_DIR}" ABSOLUTE)
 endif()
@@ -61,21 +89,53 @@ endif()
 # clip. Check for the symbols here, so a CUI without them fails with a
 # sentence instead of a link error.
 #
-# The check reads the header of the CUI source tree. When the host brought its
-# own CUI there is no source tree to read, and the compile-time check in
-# cui_iso.c is what catches an old one.
+# The check reads the header of the CUI that was found: the header of the
+# source tree, or, for an installed CUI, the header in the include directory
+# the package exports. CUI has no capability macros, so this header scan is
+# the one gate.
+set(_cui_iso_cui_header "")
 if(NOT CUI_ISO_USE_HOST_CUI AND EXISTS "${CUI_ISO_CUI_DIR}/include/cui/cui.h")
-    file(READ "${CUI_ISO_CUI_DIR}/include/cui/cui.h" _cui_iso_cui_header)
-    string(FIND "${_cui_iso_cui_header}" "cui_push_clip_checked" _cui_iso_has_checked_clip)
-    string(FIND "${_cui_iso_cui_header}" "cui_current_clip" _cui_iso_has_current_clip)
-    if(_cui_iso_has_checked_clip EQUAL -1 OR _cui_iso_has_current_clip EQUAL -1)
-        message(FATAL_ERROR
-            "The CUI checkout at '${CUI_ISO_CUI_DIR}' is missing a clip API "
-            "cui-iso needs: cui_push_clip_checked() and cui_current_clip(). "
-            "Use a CUI that has them: upstream PR #129 adds both to CUI, or "
-            "apply 'git apply patches/cui-iso-clip-api.patch' inside that CUI "
-            "source tree.")
+    set(_cui_iso_cui_header "${CUI_ISO_CUI_DIR}/include/cui/cui.h")
+elseif(TARGET cui::cui)
+    get_target_property(_cui_iso_cui_includes cui::cui INTERFACE_INCLUDE_DIRECTORIES)
+    set(_cui_iso_cui_include_dirs "")
+    if(_cui_iso_cui_includes)
+        foreach(_cui_iso_cui_include IN LISTS _cui_iso_cui_includes)
+            # an imported package exports plain paths; a CUI from another source
+            # tree exports $<BUILD_INTERFACE:...>, so the path is taken out of it
+            string(REGEX REPLACE "^\\$<BUILD_INTERFACE:(.*)>$" "\\1"
+                   _cui_iso_cui_include "${_cui_iso_cui_include}")
+            list(APPEND _cui_iso_cui_include_dirs "${_cui_iso_cui_include}")
+        endforeach()
+        # find_file caches its result, so a build directory configured against
+        # one CUI would keep reading that older header. Drop the cached value
+        # first, so the check always reads the CUI that was found now.
+        unset(_cui_iso_cui_header)
+        unset(_cui_iso_cui_header CACHE)
+        find_file(_cui_iso_cui_header cui/cui.h
+                  PATHS ${_cui_iso_cui_include_dirs} NO_DEFAULT_PATH)
     endif()
+endif()
+if(NOT _cui_iso_cui_header OR NOT EXISTS "${_cui_iso_cui_header}")
+    # The extension inside a CUI checkout: that CUI's tree is two directories up.
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../include/cui/cui.h")
+        set(_cui_iso_cui_header "${CMAKE_CURRENT_SOURCE_DIR}/../../include/cui/cui.h")
+    else()
+        message(FATAL_ERROR
+            "The header of the CUI that was found could not be read, so the clip "
+            "APIs cui-iso needs cannot be checked.")
+    endif()
+endif()
+file(READ "${_cui_iso_cui_header}" _cui_iso_cui_header_text)
+string(FIND "${_cui_iso_cui_header_text}" "cui_push_clip_checked" _cui_iso_has_checked_clip)
+string(FIND "${_cui_iso_cui_header_text}" "cui_current_clip" _cui_iso_has_current_clip)
+if(_cui_iso_has_checked_clip EQUAL -1 OR _cui_iso_has_current_clip EQUAL -1)
+    message(FATAL_ERROR
+        "The CUI that was found is missing a clip API cui-iso needs: "
+        "cui_push_clip_checked() and cui_current_clip(). Use a CUI that has "
+        "them: upstream pull request #137 adds both to CUI, or apply "
+        "'git apply patches/cui-iso-clip-api.patch' inside that CUI source "
+        "tree. A CUI source tree can be chosen with -DCUI_ISO_CUI_DIR=<path>.")
 endif()
 
 if(NOT CUI_ISO_USE_HOST_CUI)

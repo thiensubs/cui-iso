@@ -1,4 +1,11 @@
-# Add an isometric diorama layer (cui-iso)
+# The isometric diorama layer (cui-iso)
+
+The extension lives in this repository, not in a pull request against CUI.
+The CUI side is three small pull requests, each reviewable on its own:
+[#135](https://github.com/yappologistic/CUI/pull/135) (the install fix),
+[#137](https://github.com/yappologistic/CUI/pull/137) (the two clip APIs, with
+tests) and [#136](https://github.com/yappologistic/CUI/pull/136) (the workflow
+action bumps).
 
 ## What and why
 
@@ -27,19 +34,20 @@ control surfaces and status scenes.
 - Optional clipping: `cui_iso_set_bounds`. Reduced motion:
   `cui_iso_set_reduced_motion`.
 
-## What this PR changes in CUI itself
+## What this needs from CUI
 
-Two files, 35 lines added and 2 changed: `cui_push_clip` keeps its behaviour and
-forwards to the new `cui_push_clip_checked`.
+Two files in CUI, 33 lines added and 2 changed: `cui_push_clip` keeps its
+behaviour and forwards to the new `cui_push_clip_checked`.
 
-- `include/cui/cui.h` declares `cui_push_clip_checked` and `cui_current_clip`,
-  and two capability macros, `CUI_HAS_PUSH_CLIP_CHECKED` and
-  `CUI_HAS_CURRENT_CLIP`, so a consumer can tell whether the CUI it found has
-  them: the version number does not say, because a patch release can add one.
+- `include/cui/cui.h` declares `cui_push_clip_checked` and `cui_current_clip`.
 - `src/cui_draw.c` implements them: the existing `cui_push_clip` becomes a
   forwarding wrapper around `cui_push_clip_checked`, and `cui_current_clip`
   reports the clip that is really in effect -- the intersection of every clip
   on the stack.
+- `tests/test_main.c` gains `test_clip_api`.
+
+No capability macros: CUI does not have them yet, and that convention is
+better settled on its own than as a side effect of an extension.
 
 `cui_push_clip` refuses silently when the clip stack is 64 deep, and
 `cui_pop_clip` pops anyway, so a caller that pushes a clip that was refused
@@ -55,7 +63,9 @@ out from there.
 
 The extension checks for both symbols at configure time, so a CUI without them
 stops with one sentence instead of a link error, and the installed package
-refuses such a CUI as well.
+refuses such a CUI as well. While the clip API is not in a CUI release yet,
+the patch in `patches/cui-iso-clip-api.patch` is the same diff as upstream
+#137 and applies to CUI master.
 
 ## Disclosure
 
