@@ -1,8 +1,8 @@
 diff --git a/include/cui/cui.h b/include/cui/cui.h
-index 140bdab..b50ecda 100644
+index ed217c3..80e619a 100644
 --- a/include/cui/cui.h
 +++ b/include/cui/cui.h
-@@ -5123,6 +5123,20 @@ CUI_API void cui_draw_text(cui_ctx *ui, cui_font font, float size, cui_vec2 pos,
+@@ -5148,6 +5148,20 @@ CUI_API void cui_draw_text(cui_ctx *ui, cui_font font, float size, cui_vec2 pos,
  CUI_API void cui_draw_icon(cui_ctx *ui, const char *icon, cui_rect r, float size, cui_color color);
  CUI_API void cui_draw_image(cui_ctx *ui, cui_texture tex, cui_rect r, cui_rect uv, cui_corners radius, cui_color tint);
  CUI_API void cui_push_clip(cui_ctx *ui, cui_rect r);

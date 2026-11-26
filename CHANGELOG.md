@@ -23,8 +23,14 @@
   `CUI_HAS_CURRENT_CLIP` are gone. The two clip APIs are checked by reading
   the header of the CUI that was found, at configure time and again in the
   installed package.
-- `patches/cui-iso-clip-api.patch` is now the same diff as upstream pull
-  request yappologistic/CUI#137: the two functions and their test, no macros.
+- `patches/cui-iso-clip-api.patch` is now the same diff as the
+  `feature/clip-api` branch of our CUI fork (thiensubs/CUI): the two
+  functions and their test, no macros.
+- The upstream pull requests are closed. Everything this library needs now
+  lives in our own repositories: `thiensubs/CUI` (branch `feature/clip-api`)
+  and this one. The CI workflow checks out CUI from our fork, whose `master`
+  branch tracks upstream CUI master, and applies the shipped patch to it, so
+  the build no longer depends on a pull request that is still open upstream.
 
 ### Fixed
 - Solids were drawn in insertion order despite the header and README saying
@@ -107,7 +113,7 @@
 
 ### Requirements
 - The library needs `cui_push_clip_checked` and `cui_current_clip` from CUI.
-  Upstream PR #129 adds both to CUI;
+  The `feature/clip-api` branch of thiensubs/CUI adds both to CUI;
   `patches/cui-iso-clip-api.patch` adds both to any CUI checkout. The
   configure step stops with that instruction when a symbol is missing, instead
   of failing at link time, and the installed package refuses a CUI without

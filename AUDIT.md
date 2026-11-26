@@ -150,10 +150,10 @@ the check that proves it.
 ### What this pass does not claim
 
 - The extension needs **two** new CUI APIs now, `cui_push_clip_checked()` and
-  `cui_current_clip()`, not one. Both are added to CUI by the same upstream PR
-  (#129). A consumer who takes only `extensions/cui-iso` must take that CUI
-  change too. The patch shipped here,
-  `patches/cui-iso-clip-api.patch`, adds both to upstream master; the
+  `cui_current_clip()`, not one. Both are added to CUI by the same change: the
+  `feature/clip-api` branch of our CUI fork (`thiensubs/CUI`). A consumer who
+  takes only this library must take that CUI change too. The patch shipped
+  here, `patches/cui-iso-clip-api.patch`, adds both to a CUI checkout; the
   configure step checks for the symbols and stops with the instruction instead
   of failing at link time.
 - The `dllimport` proof is only enforced on MSVC. On clang and GCC the
@@ -198,8 +198,8 @@ that finds CUI with `find_package(cui)`. This pass is that split.
 
 | # | Finding | Resolution |
 |---|---------|------------|
-| 1 | The pull request carried three unrelated changes at once: the install fix, the clip API with its capability macros, and the workflow action bumps. The owner asked for each on its own. | Three pull requests off CUI master: #135 (the install fix, one file), #137 (the clip API, with `test_clip_api` in `tests/test_main.c`), #136 (the workflow bumps). The extension lives in this repository. |
-| 2 | The clip API came with `CUI_HAS_PUSH_CLIP_CHECKED` and `CUI_HAS_CURRENT_CLIP`, and the owner would rather settle the capability-macro convention on its own than as a side effect of an extension. | The macros are gone, from CUI (`#137`) and from here (`cui_iso.c` has no `#error` guard any more). The one gate is a read of the header of the CUI that was found: `CMakeLists.txt` at configure time, `cmake/cui_isoConfig.cmake.in` in the installed package. |
+| 1 | The pull request carried three unrelated changes at once: the install fix, the clip API with its capability macros, and the workflow action bumps. The owner asked for each on its own. | Three pull requests off CUI master: #135 (the install fix, one file), #137 (the clip API, with `test_clip_api` in `tests/test_main.c`), #136 (the workflow bumps). The extension lives in this repository. All three pull requests are now closed; the two the owner wanted are on upstream CUI master with our authorship, and the clip API lives in our fork's `feature/clip-api` branch. |
+| 2 | The clip API came with `CUI_HAS_PUSH_CLIP_CHECKED` and `CUI_HAS_CURRENT_CLIP`, and the owner would rather settle the capability-macro convention on its own than as a side effect of an extension. | The macros are gone, from CUI (the `feature/clip-api` branch of our fork) and from here (`cui_iso.c` has no `#error` guard any more). The one gate is a read of the header of the CUI that was found: `CMakeLists.txt` at configure time, `cmake/cui_isoConfig.cmake.in` in the installed package. |
 | 3 | The extension could only be built against a CUI source tree (`CUI_ISO_CUI_DIR`, a vendored checkout, or the tree two directories up). An installed CUI could not be used, which is the way a consumer has CUI. | `find_package(cui)` is now part of the search: a host target first, then `-DCUI_ISO_CUI_DIR`, then an installed CUI, then the vendored checkout. The clip API check reads the header of whichever CUI was found, including the include directory an installed package exports. |
 
 ### What this pass does not claim
@@ -209,6 +209,32 @@ that finds CUI with `find_package(cui)`. This pass is that split.
 - The header scan is a text search for the two names. It says the CUI that was
   found has the two functions; it does not prove the library linked at run time
   is the same one.
-- The patch in `patches/` is generated from the same diff as upstream #137. If
-  CUI master moves, the patch may no longer apply; CI applies it to CUI master
-  on every push, so a drift shows up there.
+- The patch in `patches/` is generated from the same diff as our fork's
+  `feature/clip-api` branch. If CUI master moves, the patch may no longer
+  apply; CI applies it to CUI master on every push, so a drift shows up there.
+
+## Review pass 6: keeping the work in our own repositories
+
+The upstream pull requests are closed. The owner had read the work and had
+asked for the split; the split was made, the two changes the owner wanted were
+applied to CUI master with our authorship, and then the pull requests were
+closed. This pass moves the rest of the work home, so that nothing depends on
+a pull request that is no longer open.
+
+| # | Finding | Resolution |
+|---|---------|------------|
+| 1 | The extension's CI cloned `yappologistic/CUI` and applied the shipped patch to it, so the build depended on upstream master and on a patch that had to match it. | The CI now clones `thiensubs/CUI`, whose `master` branch tracks upstream CUI master commit for commit, and applies the same shipped patch to it. The patch is the same diff as the `feature/clip-api` branch of that fork, regenerated against upstream master `f3ab64d`; `git apply --check` on a clean checkout of `f3ab64d` passes. |
+| 2 | The clip API branch was based on an older upstream master, so the diff the patch was generated from was not the diff on top of current master. | The branch was rebased onto upstream master `f3ab64d` (no conflict) and pushed to our fork as `8c148f3`. The patch is generated from `upstream/master..feature/clip-api`, three files, 88 added lines and 2 changed: the two declarations in `include/cui/cui.h`, the implementation in `src/cui_draw.c`, and `test_clip_api` in `tests/test_main.c`. |
+| 3 | The documents pointed at pull requests that are closed, so a reader following the links would find nothing to read. | `README.md`, `CHANGELOG.md`, `CMakeLists.txt` (the configure error text), `PULL_REQUEST.md` and this file name our own repositories and branches. `PULL_REQUEST.md` keeps the history of the split, one row per pull request, with what each one became. |
+
+### What this pass does not claim
+- The CUI-side test run for the rebased branch was made on macOS with
+  AddressSanitizer and UndefinedBehaviorSanitizer. Five of the 26 CUI tests
+  (`cui_tests`, `cui_test_devtools`, `cui_screenshots`, `cui_fuzz`,
+  `cui_fuzz_caffeine`) take longer than a 60 second per-test timeout on this
+  machine, so a ctest run with that timeout reports them as timeouts. Run
+  without a short timeout, the test binary reports `0 failed`.
+- The extension has no Windows job of its own. The header scan that decides
+  whether a CUI has the two clip APIs is portable C, and the CUI project runs
+  its own Windows jobs over the branch, but the extension's own build was not
+  exercised on MSVC here.

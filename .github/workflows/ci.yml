@@ -30,9 +30,12 @@ jobs:
       # The extension needs two clip APIs from CUI that stock CUI does not have
       # yet. The patch shipped in this repository adds them to a CUI checkout;
       # applying it here also proves that the patch still applies to CUI master.
+      # Our fork's master branch tracks upstream CUI master, so the CI builds
+      # against the same CUI everybody else gets, without depending on a pull
+      # request that is still open upstream.
       - name: Check out CUI and apply the clip API patch
         run: |
-          git clone --depth 1 https://github.com/yappologistic/CUI.git cui
+          git clone --depth 1 https://github.com/thiensubs/CUI.git cui
           git -C cui apply "$GITHUB_WORKSPACE/patches/cui-iso-clip-api.patch"
 
       - name: Build and install CUI

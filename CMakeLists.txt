@@ -133,7 +133,8 @@ if(_cui_iso_has_checked_clip EQUAL -1 OR _cui_iso_has_current_clip EQUAL -1)
     message(FATAL_ERROR
         "The CUI that was found is missing a clip API cui-iso needs: "
         "cui_push_clip_checked() and cui_current_clip(). Use a CUI that has "
-        "them: upstream pull request #137 adds both to CUI, or apply "
+        "them: the feature/clip-api branch of thiensubs/CUI adds both to "
+        "CUI, or apply "
         "'git apply patches/cui-iso-clip-api.patch' inside that CUI source "
         "tree. A CUI source tree can be chosen with -DCUI_ISO_CUI_DIR=<path>.")
 endif()

@@ -292,9 +292,9 @@ the clip that is really in effect. A scene with bounds cannot be clipped
 safely without the first, and picking cannot agree with what was painted
 without the second, so link against a CUI that has both. Two ways to get them:
 
-- a CUI that already carries them — upstream pull request
-  [yappologistic/CUI#137](https://github.com/yappologistic/CUI/pull/137) adds
-  both to CUI, and
+- a CUI that already carries them — the `feature/clip-api` branch of our CUI
+  fork, [thiensubs/CUI](https://github.com/thiensubs/CUI/tree/feature/clip-api),
+  adds both to CUI, and
 - the patch shipped here, applied inside the CUI source tree:
 
 ```sh
